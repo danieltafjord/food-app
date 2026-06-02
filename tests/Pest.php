@@ -1,5 +1,8 @@
 <?php
 
+use App\Enums\HouseholdRole;
+use App\Models\Household;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -44,7 +47,17 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * Create a user who owns a fresh household, with that household active.
+ *
+ * @return array{0: User, 1: Household}
+ */
+function ownerWithHousehold(): array
 {
-    // ..
+    $owner = User::factory()->create();
+    $household = Household::factory()->create();
+    $household->members()->attach($owner, ['role' => HouseholdRole::Owner->value]);
+    $owner->update(['current_household_id' => $household->id]);
+
+    return [$owner, $household];
 }
