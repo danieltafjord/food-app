@@ -57,6 +57,72 @@ it('lets only owners rename a household', function () {
         ->assertJsonPath('data.name', 'New');
 });
 
+it('defaults a new household to two servings', function () {
+    $user = User::factory()->create();
+    Passport::actingAs($user);
+
+    $this->postJson('/api/v1/households', ['name' => 'Casa'])
+        ->assertSuccessful()
+        ->assertJsonPath('data.default_servings', 2);
+});
+
+it('creates a household with a chosen default servings', function () {
+    Passport::actingAs(User::factory()->create());
+
+    $this->postJson('/api/v1/households', ['name' => 'Casa', 'default_servings' => 6])
+        ->assertSuccessful()
+        ->assertJsonPath('data.default_servings', 6);
+
+    expect(Household::firstWhere('name', 'Casa')->default_servings)->toBe(6);
+});
+
+it('lets owners update the household default servings', function () {
+    [$owner, $household] = ownerWithHousehold();
+    Passport::actingAs($owner);
+
+    $this->patchJson("/api/v1/households/{$household->id}", [
+        'name' => $household->name,
+        'default_servings' => 5,
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.default_servings', 5);
+
+    expect($household->fresh()->default_servings)->toBe(5);
+});
+
+it('leaves default servings untouched on a name-only update', function () {
+    [$owner, $household] = ownerWithHousehold();
+    $household->update(['default_servings' => 6]);
+    Passport::actingAs($owner);
+
+    $this->patchJson("/api/v1/households/{$household->id}", ['name' => 'Renamed'])
+        ->assertSuccessful()
+        ->assertJsonPath('data.name', 'Renamed')
+        ->assertJsonPath('data.default_servings', 6);
+
+    expect($household->fresh()->default_servings)->toBe(6);
+});
+
+it('rejects a default servings below one', function () {
+    [$owner, $household] = ownerWithHousehold();
+    Passport::actingAs($owner);
+
+    $this->patchJson("/api/v1/households/{$household->id}", [
+        'name' => $household->name,
+        'default_servings' => 0,
+    ])->assertJsonValidationErrors('default_servings');
+});
+
+it('exposes the active household default servings on /me', function () {
+    [$owner, $household] = ownerWithHousehold();
+    $household->update(['default_servings' => 3]);
+    Passport::actingAs($owner);
+
+    $this->getJson('/api/v1/me')
+        ->assertSuccessful()
+        ->assertJsonPath('data.current_household.default_servings', 3);
+});
+
 it('lets owners delete a household', function () {
     [$owner, $household] = ownerWithHousehold();
     Passport::actingAs($owner);

@@ -9,7 +9,13 @@ class UpdateHousehold
 {
     public function handle(Household $household, HouseholdInputData $data): Household
     {
-        $household->update(['name' => $data->name]);
+        $attributes = ['name' => $data->name];
+
+        if ($data->defaultServings !== null) {
+            $attributes['default_servings'] = $data->defaultServings;
+        }
+
+        $household->update($attributes);
 
         return $household;
     }

@@ -15,7 +15,22 @@ class Household extends Model
     use HasFactory;
 
     /** @var list<string> */
-    protected $fillable = ['name'];
+    protected $fillable = ['name', 'default_servings'];
+
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'default_servings' => 2,
+    ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'default_servings' => 'integer',
+        ];
+    }
 
     /**
      * The users that belong to this household.

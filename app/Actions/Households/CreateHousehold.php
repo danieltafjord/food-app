@@ -16,7 +16,13 @@ class CreateHousehold
     public function handle(User $user, HouseholdInputData $data): Household
     {
         return DB::transaction(function () use ($user, $data): Household {
-            $household = Household::create(['name' => $data->name]);
+            $attributes = ['name' => $data->name];
+
+            if ($data->defaultServings !== null) {
+                $attributes['default_servings'] = $data->defaultServings;
+            }
+
+            $household = Household::create($attributes);
 
             $household->members()->attach($user, ['role' => HouseholdRole::Owner->value]);
             $user->update(['current_household_id' => $household->id]);
