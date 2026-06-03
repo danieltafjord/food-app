@@ -53,6 +53,11 @@ class AppServiceProvider extends ServiceProvider
         Passport::tokensExpireIn(CarbonInterval::days(15));
         Passport::refreshTokensExpireIn(CarbonInterval::days(30));
         Passport::personalAccessTokensExpireIn(CarbonInterval::months(6));
+
+        // Binds the AuthorizationViewResponse contract that the /oauth/authorize
+        // controller resolves. First-party clients skip the consent screen, but
+        // the binding must exist for the controller to be instantiated at all.
+        Passport::authorizationView('oauth.authorize');
     }
 
     /**

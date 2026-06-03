@@ -3,6 +3,8 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\AppLocale;
+use App\Enums\Theme;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -17,7 +19,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Passport\Contracts\OAuthenticatable;
 use Laravel\Passport\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'current_household_id'])]
+#[Fillable(['name', 'email', 'password', 'current_household_id', 'theme', 'locale'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements OAuthenticatable, PasskeyUser
 {
@@ -35,6 +37,8 @@ class User extends Authenticatable implements OAuthenticatable, PasskeyUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'theme' => Theme::class,
+            'locale' => AppLocale::class,
         ];
     }
 

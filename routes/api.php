@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\MemberController;
 use App\Http\Controllers\Api\V1\ShoppingListController;
 use App\Http\Controllers\Api\V1\ShoppingListItemController;
 use App\Http\Controllers\Api\V1\SwitchHouseholdController;
+use App\Http\Controllers\Api\V1\SyncController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
@@ -23,6 +24,7 @@ Route::prefix('v1')
     ->group(function () {
         // Authenticated user + token management
         Route::get('me', [MeController::class, 'show'])->name('me');
+        Route::patch('me/settings', [MeController::class, 'updateSettings'])->name('me.settings.update');
         Route::post('auth/logout', LogoutController::class)->name('auth.logout');
         Route::get('auth/devices', [DeviceController::class, 'index'])->name('auth.devices.index');
         Route::delete('auth/devices/{token}', [DeviceController::class, 'destroy'])->name('auth.devices.destroy');
@@ -41,6 +43,9 @@ Route::prefix('v1')
 
         // Scoped to the active household
         Route::middleware('household.active')->group(function () {
+            // Local-first mobile sync: one batched push/pull of all syncable data.
+            Route::post('sync', [SyncController::class, 'store'])->name('sync');
+
             Route::get('household/members', [MemberController::class, 'index'])->name('household.members.index');
             Route::patch('household/members/{user}', [MemberController::class, 'update'])->name('household.members.update');
             Route::delete('household/members/{user}', [MemberController::class, 'destroy'])->name('household.members.destroy');

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSyncIdentity;
 use Database\Factories\IngredientFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Ingredient extends Model
 {
     /** @use HasFactory<IngredientFactory> */
-    use HasFactory;
+    use HasFactory, HasSyncIdentity;
 
     /** @var list<string> */
     protected $fillable = [

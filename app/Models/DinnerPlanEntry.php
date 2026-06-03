@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\MealType;
+use App\Models\Concerns\HasSyncIdentity;
 use Database\Factories\DinnerPlanEntryFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class DinnerPlanEntry extends Model
 {
     /** @use HasFactory<DinnerPlanEntryFactory> */
-    use HasFactory;
+    use HasFactory, HasSyncIdentity;
 
     /** @var list<string> */
     protected $fillable = [

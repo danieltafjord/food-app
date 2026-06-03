@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSyncIdentity;
 use Database\Factories\ShoppingListItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ShoppingListItem extends Model
 {
     /** @use HasFactory<ShoppingListItemFactory> */
-    use HasFactory;
+    use HasFactory, HasSyncIdentity;
 
     /** @var list<string> */
     protected $fillable = [
