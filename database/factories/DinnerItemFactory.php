@@ -21,7 +21,10 @@ class DinnerItemFactory extends Factory
     {
         return [
             'dinner_id' => Dinner::factory(),
-            'ingredient_id' => Ingredient::factory(),
+            'ingredient_id' => fn (array $attributes) => Ingredient::factory()
+                ->for(Dinner::withTrashed()->findOrFail($attributes['dinner_id'])->household)
+                ->create()
+                ->id,
             'quantity' => fake()->randomFloat(2, 1, 500),
             'unit' => fake()->randomElement(['g', 'ml', 'pcs', 'tbsp']),
         ];

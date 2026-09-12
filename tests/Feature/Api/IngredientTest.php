@@ -53,7 +53,7 @@ it('deletes an unused ingredient', function () {
     $ingredient = Ingredient::factory()->for($this->household)->create();
 
     $this->deleteJson("/api/v1/ingredients/{$ingredient->id}")->assertNoContent();
-    $this->assertModelMissing($ingredient);
+    $this->assertSoftDeleted($ingredient);
 });
 
 it('refuses to delete an ingredient that is in use', function () {

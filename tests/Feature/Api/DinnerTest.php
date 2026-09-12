@@ -82,6 +82,6 @@ it('deletes a dinner and its items', function () {
 
     $this->deleteJson("/api/v1/dinners/{$dinner->id}")->assertNoContent();
 
-    $this->assertModelMissing($dinner);
-    $this->assertModelMissing($item);
+    $this->assertSoftDeleted($dinner);
+    $this->assertSoftDeleted($item);
 });

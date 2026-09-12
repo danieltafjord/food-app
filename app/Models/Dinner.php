@@ -2,7 +2,8 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\HasSyncIdentity;
+use App\Models\Concerns\Syncable;
+use Carbon\CarbonInterface;
 use Database\Factories\DinnerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Dinner extends Model
 {
     /** @use HasFactory<DinnerFactory> */
-    use HasFactory, HasSyncIdentity;
+    use HasFactory, Syncable;
 
     /** @var list<string> */
     protected $fillable = [
@@ -73,5 +74,16 @@ class Dinner extends Model
     public function planEntries(): HasMany
     {
         return $this->hasMany(DinnerPlanEntry::class);
+    }
+
+    public function syncHouseholdId(): int
+    {
+        return (int) $this->household_id;
+    }
+
+    protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
+    {
+        $this->items()->get()->each(fn (DinnerItem $item) => $item->tombstone($deletedAt, $version));
+        $this->planEntries()->get()->each(fn (DinnerPlanEntry $entry) => $entry->tombstone($deletedAt, $version));
     }
 }

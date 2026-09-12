@@ -10,7 +10,7 @@ class DinnerItemInputData extends Data
 {
     public function __construct(
         public int $ingredientId,
-        #[Min(0)]
+        #[Min(0), Max(999999.99)]
         public ?float $quantity = null,
         #[Max(50)]
         public ?string $unit = null,

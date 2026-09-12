@@ -26,7 +26,7 @@ class DinnerController extends ApiController
 
     public function store(DinnerInputData $data, Request $request, CreateDinner $action): DinnerData
     {
-        return DinnerData::fromDinner($action->handle($this->currentHousehold($request), $data));
+        return DinnerData::fromDinner($action->handle($this->currentHousehold($request), $data, $request->user()));
     }
 
     public function show(Request $request, Dinner $dinner): DinnerData

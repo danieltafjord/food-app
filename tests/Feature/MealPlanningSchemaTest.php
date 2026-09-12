@@ -111,11 +111,25 @@ it('cascades deletes from a household to everything it owns', function () {
         ->and(ShoppingList::find($list->id))->toBeNull();
 });
 
-it('prevents deleting an ingredient still used by a dinner', function () {
+it('tombstones the dinner items of a deleted ingredient', function () {
+    $household = Household::factory()->create();
+    $ingredient = Ingredient::factory()->for($household)->create();
+    $dinner = Dinner::factory()->for($household)->create();
+    $item = $dinner->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 100, 'unit' => 'g']);
+
+    // Deletes are soft so they propagate to synced devices; the recipe line goes with it.
+    $ingredient->delete();
+
+    expect(Ingredient::find($ingredient->id))->toBeNull()
+        ->and(Ingredient::withTrashed()->find($ingredient->id)->trashed())->toBeTrue()
+        ->and(DinnerItem::withTrashed()->find($item->id)->trashed())->toBeTrue();
+});
+
+it('still refuses to hard-delete an ingredient a dinner item references', function () {
     $household = Household::factory()->create();
     $ingredient = Ingredient::factory()->for($household)->create();
     $dinner = Dinner::factory()->for($household)->create();
     $dinner->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 100, 'unit' => 'g']);
 
-    $ingredient->delete();
+    $ingredient->forceDelete();
 })->throws(QueryException::class);

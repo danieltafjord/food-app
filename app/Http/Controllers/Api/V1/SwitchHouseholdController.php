@@ -19,9 +19,10 @@ class SwitchHouseholdController extends Controller
             'household_id' => ['required', 'integer'],
         ]);
 
-        $household = Household::findOrFail($validated['household_id']);
-
-        $this->authorize('view', $household);
+        // Resolve through the user's own memberships so a foreign id reads exactly
+        // like a missing one — no probing which household ids exist.
+        /** @var Household $household */
+        $household = $request->user()->households()->findOrFail($validated['household_id']);
 
         $action->handle($request->user(), $household);
 

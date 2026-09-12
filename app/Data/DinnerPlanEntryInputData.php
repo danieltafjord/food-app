@@ -14,7 +14,7 @@ class DinnerPlanEntryInputData extends Data
         public int $dinnerId,
         #[Date]
         public string $scheduledDate,
-        #[Min(1)]
+        #[Min(1), Max(99)]
         public int $servings,
         public MealType $mealType = MealType::Dinner,
         #[Max(255)]

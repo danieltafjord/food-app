@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\HasSyncIdentity;
+use App\Models\Concerns\Syncable;
 use Database\Factories\ShoppingListItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ShoppingListItem extends Model
 {
     /** @use HasFactory<ShoppingListItemFactory> */
-    use HasFactory, HasSyncIdentity;
+    use HasFactory, Syncable;
 
     /** @var list<string> */
     protected $fillable = [
@@ -49,5 +49,10 @@ class ShoppingListItem extends Model
     public function ingredient(): BelongsTo
     {
         return $this->belongsTo(Ingredient::class);
+    }
+
+    public function syncHouseholdId(): int
+    {
+        return (int) ShoppingList::withTrashed()->whereKey($this->shopping_list_id)->value('household_id');
     }
 }

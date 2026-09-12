@@ -101,5 +101,5 @@ it('deletes a plan', function () {
     $plan = DinnerPlan::factory()->for($this->household)->create();
 
     $this->deleteJson("/api/v1/dinner-plans/{$plan->id}")->assertNoContent();
-    $this->assertModelMissing($plan);
+    $this->assertSoftDeleted($plan);
 });

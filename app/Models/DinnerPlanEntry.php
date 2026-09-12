@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use App\Enums\MealType;
-use App\Models\Concerns\HasSyncIdentity;
+use App\Models\Concerns\Syncable;
 use Database\Factories\DinnerPlanEntryFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class DinnerPlanEntry extends Model
 {
     /** @use HasFactory<DinnerPlanEntryFactory> */
-    use HasFactory, HasSyncIdentity;
+    use HasFactory, Syncable;
 
     /** @var list<string> */
     protected $fillable = [
@@ -51,5 +51,10 @@ class DinnerPlanEntry extends Model
     public function dinner(): BelongsTo
     {
         return $this->belongsTo(Dinner::class);
+    }
+
+    public function syncHouseholdId(): int
+    {
+        return (int) DinnerPlan::withTrashed()->whereKey($this->dinner_plan_id)->value('household_id');
     }
 }

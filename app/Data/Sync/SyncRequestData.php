@@ -7,10 +7,13 @@ use Spatie\LaravelData\Data;
 /**
  * The mobile client's sync envelope.
  *
- * `lastSync` is the opaque `server_time` cursor returned by the previous sync
- * (null on the very first sync → pull everything). `changes` is a map of
- * resource key → list of rows the client has touched since then, each row in
- * the client's snake_case shape with a `uuid` `id` and client timestamps.
+ * `cursor` is the opaque integer returned by the previous sync (null on the
+ * very first sync → pull everything live). `householdId` is the household the
+ * client believes it is bound to; a mismatch with the active household is
+ * refused so a device never uploads one household's rows into another.
+ * `changes` maps resource key → rows the client has touched since the cursor,
+ * each in the client's snake_case shape with a `uuid` `id` and client
+ * timestamps.
  *
  * @property array<string, array<int, array<string, mixed>>> $changes
  */
@@ -20,21 +23,25 @@ class SyncRequestData extends Data
      * @param  array<string, array<int, array<string, mixed>>>  $changes
      */
     public function __construct(
-        public ?string $lastSync,
+        public ?int $cursor,
+        public ?int $householdId,
         public array $changes = [],
     ) {}
 
     /**
-     * A pull-only sync sends no changes, so `changes` must accept an empty
-     * array rather than the default "required" rule for a typed array.
+     * Only the envelope is validated here; rows are validated one by one by
+     * the action so a bad row is reported rather than failing the batch.
      *
      * @return array<string, array<int, string>>
      */
     public static function rules(): array
     {
         return [
-            'last_sync' => ['nullable', 'string'],
-            'changes' => ['nullable', 'array'],
+            'cursor' => ['nullable', 'integer', 'min:0'],
+            'household_id' => ['nullable', 'integer'],
+            'changes' => ['nullable', 'array:ingredients,dinners,dinner_items,dinner_plans,plan_entries,shopping_lists,shopping_list_items'],
+            'changes.*' => ['array'],
+            'changes.*.*' => ['array'],
         ];
     }
 }

@@ -15,8 +15,9 @@ class DinnerInputData extends Data
     public function __construct(
         #[Max(255)]
         public string $name,
-        #[Min(1)]
+        #[Min(1), Max(99)]
         public int $defaultServings = 2,
+        #[Max(5000)]
         public ?string $notes = null,
         #[DataCollectionOf(DinnerItemInputData::class)]
         public array $items = [],

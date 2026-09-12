@@ -12,7 +12,11 @@ class HouseholdInvitationNotification extends Notification implements ShouldQueu
 {
     use Queueable;
 
-    public function __construct(public HouseholdInvitation $invitation) {}
+    public function __construct(public HouseholdInvitation $invitation)
+    {
+        // Queue only once the invitation row is committed, so a revoke can't race the mail.
+        $this->afterCommit();
+    }
 
     /**
      * @return array<int, string>

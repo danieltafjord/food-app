@@ -6,6 +6,7 @@ use App\Actions\Sync\ApplySyncBatch;
 use App\Data\Sync\SyncRequestData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 class SyncController extends ApiController
 {
@@ -15,12 +16,16 @@ class SyncController extends ApiController
      */
     public function store(SyncRequestData $data, Request $request, ApplySyncBatch $action): JsonResponse
     {
-        $result = $action->handle(
-            $this->currentHousehold($request),
-            $data->lastSync,
-            $data->changes,
-        );
+        $household = $this->currentHousehold($request);
 
-        return response()->json($result);
+        if ($data->householdId !== null && $data->householdId !== $household->id) {
+            return response()->json([
+                'message' => 'The active household changed; re-link this device before syncing.',
+                'code' => 'household_mismatch',
+                'household_id' => $household->id,
+            ], Response::HTTP_CONFLICT);
+        }
+
+        return response()->json($action->handle($household, $data->cursor, $data->changes));
     }
 }

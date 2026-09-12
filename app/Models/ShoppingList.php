@@ -2,7 +2,8 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\HasSyncIdentity;
+use App\Models\Concerns\Syncable;
+use Carbon\CarbonInterface;
 use Database\Factories\ShoppingListFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ShoppingList extends Model
 {
     /** @use HasFactory<ShoppingListFactory> */
-    use HasFactory, HasSyncIdentity;
+    use HasFactory, Syncable;
 
     /** @var list<string> */
     protected $fillable = [
@@ -44,5 +45,15 @@ class ShoppingList extends Model
     public function items(): HasMany
     {
         return $this->hasMany(ShoppingListItem::class);
+    }
+
+    public function syncHouseholdId(): int
+    {
+        return (int) $this->household_id;
+    }
+
+    protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
+    {
+        $this->items()->get()->each(fn (ShoppingListItem $item) => $item->tombstone($deletedAt, $version));
     }
 }

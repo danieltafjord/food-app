@@ -65,7 +65,7 @@ it('deletes an item', function () {
     $item = $list->items()->create(['name' => 'Milk']);
 
     $this->deleteJson("/api/v1/shopping-lists/{$list->id}/items/{$item->id}")->assertNoContent();
-    $this->assertModelMissing($item);
+    $this->assertSoftDeleted($item);
 });
 
 it('hides another household shopping list', function () {
@@ -78,5 +78,5 @@ it('deletes a shopping list', function () {
     $list = ShoppingList::factory()->for($this->household)->create();
 
     $this->deleteJson("/api/v1/shopping-lists/{$list->id}")->assertNoContent();
-    $this->assertModelMissing($list);
+    $this->assertSoftDeleted($list);
 });

@@ -17,9 +17,15 @@ class Household extends Model
     /** @var list<string> */
     protected $fillable = ['name', 'default_servings'];
 
-    /** @var array<string, mixed> */
+    /**
+     * `sync_version` is locked and incremented by every syncable write — see
+     * AllocateSyncVersion.
+     *
+     * @var array<string, mixed>
+     */
     protected $attributes = [
         'default_servings' => 2,
+        'sync_version' => 0,
     ];
 
     /**
@@ -29,6 +35,7 @@ class Household extends Model
     {
         return [
             'default_servings' => 'integer',
+            'sync_version' => 'integer',
         ];
     }
 

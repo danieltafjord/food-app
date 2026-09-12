@@ -21,7 +21,10 @@ class ShoppingListItemFactory extends Factory
     {
         return [
             'shopping_list_id' => ShoppingList::factory(),
-            'ingredient_id' => Ingredient::factory(),
+            'ingredient_id' => fn (array $attributes) => Ingredient::factory()
+                ->for(ShoppingList::withTrashed()->findOrFail($attributes['shopping_list_id'])->household)
+                ->create()
+                ->id,
             'name' => null,
             'quantity' => fake()->randomFloat(2, 1, 10),
             'unit' => fake()->randomElement(['g', 'pcs', 'ml']),

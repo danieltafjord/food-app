@@ -144,12 +144,12 @@ it('switches the active household', function () {
     expect($owner->fresh()->current_household_id)->toBe($second->id);
 });
 
-it('forbids switching to a household you do not belong to', function () {
+it('treats switching to a household you do not belong to as not found', function () {
     [$owner] = ownerWithHousehold();
     $other = Household::factory()->create();
 
     Passport::actingAs($owner);
-    $this->postJson('/api/v1/household/switch', ['household_id' => $other->id])->assertForbidden();
+    $this->postJson('/api/v1/household/switch', ['household_id' => $other->id])->assertNotFound();
 });
 
 describe('members', function () {

@@ -13,11 +13,15 @@ class RemoveMember
      */
     public function handle(Household $household, User $member): void
     {
-        if ($household->isOwnedBy($member) && $household->ownerCount() <= 1) {
-            abort(409, 'The household must have at least one owner.');
-        }
-
         DB::transaction(function () use ($household, $member): void {
+            // Serialise membership changes per household so two owners leaving at
+            // once cannot both pass the last-owner check.
+            Household::query()->lockForUpdate()->findOrFail($household->id);
+
+            if ($household->isOwnedBy($member) && $household->ownerCount() <= 1) {
+                abort(409, 'The household must have at least one owner.');
+            }
+
             $household->members()->detach($member->id);
 
             if ($member->current_household_id === $household->id) {

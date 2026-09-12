@@ -196,3 +196,71 @@ The resulting list is linked back to the plan (`dinner_plan_id`).
 > Example: Bolognese (serves 4: 2 onions, 500 g beef) cooked for 2 → 1 onion + 250 g
 > beef. Plus a soup (serves 2: 1 onion) cooked for 2 → 1 onion. The list has **2 onions
 > (pcs)** and **250 g beef** — two lines, onions combined.
+
+---
+
+## Sync (active household)
+
+The mobile app is local-first; this endpoint is how it exchanges its offline
+edits with the household. Everything else in this document is the REST surface;
+the app only uses that for accounts, households, members and invitations.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/sync` | Push local changes and pull everything changed since the cursor |
+
+Request:
+
+```json
+{
+  "cursor": 41,
+  "household_id": 7,
+  "changes": {
+    "ingredients": [{ "id": "…uuid…", "name": "Melk", "default_unit": "l", "category": "dairy",
+                      "created_at": "…", "updated_at": "…", "deleted_at": null }],
+    "dinner_items": [{ "id": "…uuid…", "updated_at": "…", "deleted_at": "…" }]
+  }
+}
+```
+
+- `cursor` — the integer returned by the previous sync, or `null` on a device's first
+  sync (then only live rows are returned, never tombstones).
+- `household_id` — the household the device is bound to. If the account's active
+  household differs the request is refused with `409` and
+  `{ "code": "household_mismatch", "household_id": <active> }`; the device re-binds
+  (wipes its local copy and pulls the new household) instead of uploading one
+  household's rows into another.
+- `changes` — resource key → rows. Keys, in dependency order: `ingredients`, `dinners`,
+  `dinner_items`, `dinner_plans`, `plan_entries`, `shopping_lists`, `shopping_list_items`.
+  Foreign keys are the parent's uuid. A delete is a **bare tombstone**
+  `{ id, updated_at, deleted_at }`; a tombstone for a uuid the server never saw is ignored.
+  At most **1000 rows** per request — larger outboxes are chunked in dependency order.
+
+Response (`200`, not wrapped in `data`):
+
+```json
+{
+  "cursor": 42,
+  "household_id": 7,
+  "changes": { "ingredients": [ … ], "dinners": [ … ], … },
+  "rejected": { "dinner_items": [{ "id": "…", "code": "unknown_parent", "message": "…" }] },
+  "remaps": { "ingredients": { "…pushed uuid…": "…existing uuid…" } }
+}
+```
+
+- Every write in a batch is stamped with one new household `sync_version`; that number is
+  the returned `cursor`. `changes` holds every row whose version is above the request
+  cursor, tombstones included, plus any row the device pushed but lost on so it converges.
+- Conflicts are **last-write-wins by the client `updated_at`** (clamped to the server
+  clock, stored as UTC). A newer live row restores a tombstone.
+- Deleting a parent tombstones its children (dinner → items and plan entries, plan →
+  entries, list → items). Deleting an ingredient tombstones its recipe lines and turns
+  shopping-list lines into free text.
+- Rows are validated individually. A bad row is listed in `rejected` with a code
+  (`invalid`, `unknown_id`, `unknown_parent`) and skipped; it never fails the batch. Only a
+  malformed envelope, an unknown resource key or an oversized batch returns `422`.
+- `remaps` reports ingredients that were merged onto an existing same-named ingredient
+  (two devices created "Melk" offline); the client rewrites its references and drops the
+  duplicate.
+- REST writes and deletes are versioned and tombstoned too, so a device with a cursor sees
+  them on its next pull.

@@ -20,6 +20,7 @@ class DeviceController extends Controller
 
         $tokens = $request->user()->tokens()
             ->where('revoked', false)
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
             ->latest()
             ->get()
             ->map(fn (Token $token) => AccessTokenData::fromToken($token, $currentTokenId));

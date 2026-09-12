@@ -12,7 +12,7 @@ class ShoppingListItemInputData extends Data
         public ?int $ingredientId = null,
         #[Max(255)]
         public ?string $name = null,
-        #[Min(0)]
+        #[Min(0), Max(999999.99)]
         public ?float $quantity = null,
         #[Max(50)]
         public ?string $unit = null,

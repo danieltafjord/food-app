@@ -55,6 +55,12 @@ return [
     'url' => env('APP_URL', 'http://localhost'),
 
     /*
+    | Where user-facing links (invitations, verification) should point when the
+    | web front end lives on a different origin than the API. Falls back to `url`.
+    */
+    'frontend_url' => env('FRONTEND_URL'),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------

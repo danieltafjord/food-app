@@ -14,6 +14,17 @@ class GenerateShoppingListFromPlan
      * planned servings (entry.servings / dinner.default_servings) and sum the
      * results, grouped by ingredient + unit.
      */
+    /**
+     * Units compare trimmed and lower-cased; blank means "no unit". Mirrored by
+     * the mobile client's `normalizeUnit` so both sides aggregate identically.
+     */
+    public static function normalizeUnit(?string $unit): ?string
+    {
+        $normalized = mb_strtolower(trim((string) $unit));
+
+        return $normalized === '' ? null : $normalized;
+    }
+
     public function handle(DinnerPlan $plan, User $user): ShoppingList
     {
         $plan->loadMissing('household', 'entries.dinner.items');
@@ -32,13 +43,14 @@ class GenerateShoppingListFromPlan
                 : 1.0;
 
             foreach ($dinner->items as $item) {
-                $key = $item->ingredient_id.'|'.($item->unit ?? '');
+                $unit = self::normalizeUnit($item->unit);
+                $key = $item->ingredient_id.'|'.($unit ?? '');
                 $scaled = $item->quantity !== null ? (float) $item->quantity * $factor : null;
 
                 if (! array_key_exists($key, $aggregated)) {
                     $aggregated[$key] = [
                         'ingredient_id' => $item->ingredient_id,
-                        'unit' => $item->unit,
+                        'unit' => $unit,
                         'quantity' => $scaled,
                     ];
                 } elseif ($scaled !== null) {
