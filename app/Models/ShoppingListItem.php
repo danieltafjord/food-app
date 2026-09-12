@@ -53,6 +53,10 @@ class ShoppingListItem extends Model
 
     public function syncHouseholdId(): int
     {
+        if ($this->relationLoaded('shoppingList') && $this->shoppingList !== null) {
+            return (int) $this->shoppingList->household_id;
+        }
+
         return (int) ShoppingList::withTrashed()->whereKey($this->shopping_list_id)->value('household_id');
     }
 }

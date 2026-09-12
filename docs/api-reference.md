@@ -249,8 +249,10 @@ Response (`200`, not wrapped in `data`):
 ```
 
 - Every write in a batch is stamped with one new household `sync_version`; that number is
-  the returned `cursor`. `changes` holds every row whose version is above the request
-  cursor, tombstones included, plus any row the device pushed but lost on so it converges.
+  the returned `cursor`. A batch that writes nothing (a poll) returns the household's
+  current version unchanged, so an idle device's cursor stays put. `changes` holds every
+  row whose version is above the request cursor, tombstones included, plus any row the
+  device pushed but lost on so it converges.
 - Conflicts are **last-write-wins by the client `updated_at`** (clamped to the server
   clock, stored as UTC). A newer live row restores a tombstone.
 - Deleting a parent tombstones its children (dinner → items and plan entries, plan →

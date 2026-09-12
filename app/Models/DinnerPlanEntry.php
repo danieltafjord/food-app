@@ -55,6 +55,10 @@ class DinnerPlanEntry extends Model
 
     public function syncHouseholdId(): int
     {
+        if ($this->relationLoaded('dinnerPlan') && $this->dinnerPlan !== null) {
+            return (int) $this->dinnerPlan->household_id;
+        }
+
         return (int) DinnerPlan::withTrashed()->whereKey($this->dinner_plan_id)->value('household_id');
     }
 }

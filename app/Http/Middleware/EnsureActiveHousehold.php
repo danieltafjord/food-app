@@ -17,8 +17,13 @@ class EnsureActiveHousehold
     {
         $user = $request->user();
 
+        // Membership straight off the pivot's (household_id, user_id) index —
+        // no join through users.
         $household = $user?->currentHousehold()
-            ->whereHas('members', fn ($query) => $query->whereKey($user->id))
+            ->whereExists(fn ($query) => $query
+                ->from('household_user')
+                ->whereColumn('household_user.household_id', 'households.id')
+                ->where('household_user.user_id', $user->id))
             ->first();
 
         if (! $household) {

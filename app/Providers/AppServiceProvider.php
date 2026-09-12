@@ -2,13 +2,16 @@
 
 namespace App\Providers;
 
+use App\Actions\Sync\AllocateSyncVersion;
 use App\Models\Passport\Client;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterval;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -22,7 +25,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One allocator per request so writes inside one transaction share a version.
+        $this->app->singleton(AllocateSyncVersion::class);
     }
 
     /**
@@ -37,6 +41,18 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configurePassport();
         $this->configureRateLimiting();
+        $this->configureSyncVersions();
+    }
+
+    /**
+     * A rolled-back transaction never committed its allocated sync version, so
+     * the allocator must not hand that number out again as if it had.
+     */
+    protected function configureSyncVersions(): void
+    {
+        Event::listen(TransactionRolledBack::class, function (): void {
+            $this->app->make(AllocateSyncVersion::class)->forget();
+        });
     }
 
     /**

@@ -54,6 +54,6 @@ class ShoppingList extends Model
 
     protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
     {
-        $this->items()->get()->each(fn (ShoppingListItem $item) => $item->tombstone($deletedAt, $version));
+        $this->items()->update($this->tombstoneStamp($deletedAt, $version));
     }
 }

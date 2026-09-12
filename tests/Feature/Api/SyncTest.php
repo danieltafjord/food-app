@@ -278,6 +278,81 @@ it('returns only rows above the cursor, even when written in the same second', f
         ->and($second->json('cursor'))->toBeGreaterThan($cursor);
 });
 
+it('answers an up-to-date empty poll without allocating a version', function () {
+    $cursor = sync(null, ['ingredients' => [ingredientRow()]])->json('cursor');
+    $before = $this->household->fresh()->sync_version;
+
+    $poll = sync($cursor)->assertSuccessful();
+
+    expect($poll->json('cursor'))->toBe($cursor)
+        ->and($poll->json('changes'))->toBe(array_fill_keys(
+            ['ingredients', 'dinners', 'dinner_items', 'dinner_plans', 'plan_entries', 'shopping_lists', 'shopping_list_items'],
+            [],
+        ))
+        ->and($poll->json('rejected'))->toBe([])
+        ->and($poll->json('remaps'))->toBe([])
+        ->and($this->household->fresh()->sync_version)->toBe($before);
+});
+
+it('does not advance the household version for a pull that writes nothing', function () {
+    $cursor = sync(null, ['ingredients' => [ingredientRow()]])->json('cursor');
+    // A REST write the device has not seen yet: the pull must return it, but
+    // pulling is not a write and must not mint a version of its own.
+    $this->postJson('/api/v1/ingredients', ['name' => 'Flour', 'default_unit' => 'g'])->assertCreated();
+    $version = $this->household->fresh()->sync_version;
+    expect($version)->toBeGreaterThan($cursor);
+
+    $pull = sync($cursor)->assertSuccessful();
+
+    expect(collect($pull->json('changes.ingredients'))->pluck('name'))->toContain('Flour')
+        ->and($pull->json('cursor'))->toBe($version)
+        ->and($this->household->fresh()->sync_version)->toBe($version);
+});
+
+it('stamps a REST delete and its cascade with the version it commits', function () {
+    $dinner = Dinner::factory()->for($this->household)->create();
+    $item = DinnerItem::factory()->for($dinner, 'dinner')->create();
+    $before = $this->household->fresh()->sync_version;
+
+    $this->deleteJson('/api/v1/dinners/'.$dinner->id)->assertNoContent();
+
+    $version = $this->household->fresh()->sync_version;
+    expect($version)->toBe($before + 1)
+        ->and(Dinner::withTrashed()->find($dinner->id)->sync_version)->toBe($version)
+        ->and(DinnerItem::withTrashed()->find($item->id)->sync_version)->toBe($version);
+});
+
+it('shares one version across every row a REST request writes', function () {
+    $ingredients = Ingredient::factory()->count(3)->for($this->household)->create();
+    $before = $this->household->fresh()->sync_version;
+
+    $response = $this->postJson('/api/v1/dinners', [
+        'name' => 'Bolognese',
+        'default_servings' => 4,
+        'items' => $ingredients->map(fn (Ingredient $i) => ['ingredient_id' => $i->id, 'quantity' => 1, 'unit' => 'g'])->all(),
+    ])->assertSuccessful();
+
+    $version = $this->household->fresh()->sync_version;
+    $dinner = Dinner::find($response->json('data.id'));
+    expect($version)->toBe($before + 1)
+        ->and($dinner->sync_version)->toBe($version)
+        ->and($dinner->items()->pluck('sync_version')->unique()->all())->toBe([$version]);
+});
+
+it('rolls a failed REST write back with its version', function () {
+    $before = $this->household->fresh()->sync_version;
+    $foreign = Ingredient::factory()->create();
+
+    $this->postJson('/api/v1/dinners', [
+        'name' => 'X',
+        'default_servings' => 2,
+        'items' => [['ingredient_id' => $foreign->id, 'quantity' => 1, 'unit' => 'g']],
+    ])->assertUnprocessable();
+
+    expect(Dinner::count())->toBe(0)
+        ->and($this->household->fresh()->sync_version)->toBe($before);
+});
+
 it('never leaks, overwrites, or parents onto another household\'s rows', function () {
     [, $otherHousehold] = ownerWithHousehold();
     $foreignIngredient = Ingredient::factory()->for($otherHousehold)->create(['name' => 'Theirs']);

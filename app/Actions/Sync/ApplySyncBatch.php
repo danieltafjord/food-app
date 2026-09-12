@@ -15,6 +15,7 @@ use App\Models\ShoppingListItem;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -25,9 +26,14 @@ use Throwable;
  * Applies one batched delta sync for a household and returns what the client
  * should pull back.
  *
- * Push (incoming) and pull (outgoing) run in one transaction that holds the
- * household's version lock (see AllocateSyncVersion), so syncs for the same
- * household serialise and the integer cursor is a complete delta:
+ * Push (incoming) and pull (outgoing) run in one transaction. A batch that
+ * carries rows takes the household's row lock up front (see
+ * AllocateSyncVersion) so write batches for the same household serialise; a
+ * pure pull takes no lock and allocates no version — it reads the committed
+ * `households.sync_version`, which is only ever advanced by a write in the
+ * same transaction as the rows it stamps, so the integer cursor is a complete
+ * delta either way. An empty poll whose cursor is already current is answered
+ * without opening a transaction at all.
  *
  *  1. Every row is validated and applied on its own. A bad row is reported in
  *     `rejected` and skipped — it never fails the batch, so one poisoned row
@@ -61,8 +67,9 @@ class ApplySyncBatch
 
     /**
      * Resource definitions in dependency order. Each child's `fks` map a
-     * foreign-key column to the parent resource whose UUID→id map resolves it;
-     * the first FK also decides ownership. `nullableFks` may arrive as null.
+     * foreign-key column to the parent resource whose UUID→id map resolves it
+     * (both ways: incoming uuids to ids, outgoing ids to uuids); the first FK
+     * also decides ownership. `nullableFks` may arrive as null.
      *
      * @return array<string, array{
      *     model: class-string<Model>,
@@ -70,8 +77,6 @@ class ApplySyncBatch
      *     fks: array<string, string>,
      *     nullableFks: list<string>,
      *     hasHousehold: bool,
-     *     parent: ?string,
-     *     with: array<string, callable>,
      *     query: callable(Household, bool): Builder,
      *     serialize: callable(Model): array<string, mixed>,
      *     rules: array<string, list<mixed>>,
@@ -79,9 +84,6 @@ class ApplySyncBatch
      */
     private function resources(): array
     {
-        // Eager-load closures receive the relation, which proxies to the builder.
-        $withTrashed = fn ($q) => $q->withTrashed()->select(['id', 'uuid']);
-
         return [
             'ingredients' => [
                 'model' => Ingredient::class,
@@ -89,11 +91,8 @@ class ApplySyncBatch
                 'fks' => [],
                 'nullableFks' => [],
                 'hasHousehold' => true,
-                'parent' => null,
-                'with' => [],
                 'query' => fn (Household $h, bool $liveParents): Builder => $h->ingredients()->getQuery(),
                 'serialize' => fn (Ingredient $m): array => [
-                    'id' => $m->uuid,
                     'name' => $m->name,
                     'default_unit' => $m->default_unit,
                     'category' => $m->category,
@@ -110,11 +109,8 @@ class ApplySyncBatch
                 'fks' => [],
                 'nullableFks' => [],
                 'hasHousehold' => true,
-                'parent' => null,
-                'with' => [],
                 'query' => fn (Household $h, bool $liveParents): Builder => $h->dinners()->getQuery(),
                 'serialize' => fn (Dinner $m): array => [
-                    'id' => $m->uuid,
                     'name' => $m->name,
                     'default_servings' => $m->default_servings,
                     'notes' => $m->notes,
@@ -131,14 +127,9 @@ class ApplySyncBatch
                 'fks' => ['dinner_id' => 'dinners', 'ingredient_id' => 'ingredients'],
                 'nullableFks' => [],
                 'hasHousehold' => false,
-                'parent' => 'dinner',
-                'with' => ['dinner' => $withTrashed, 'ingredient' => $withTrashed],
                 'query' => fn (Household $h, bool $liveParents): Builder => DinnerItem::query()
-                    ->whereHas('dinner', fn (Builder $q) => $this->parentScope($q, $h, $liveParents)),
+                    ->whereIn('dinner_id', fn (QueryBuilder $q) => $this->parentIds($q, 'dinners', $h, $liveParents)),
                 'serialize' => fn (DinnerItem $m): array => [
-                    'id' => $m->uuid,
-                    'dinner_id' => $m->dinner?->uuid,
-                    'ingredient_id' => $m->ingredient?->uuid,
                     'quantity' => $m->quantity !== null ? (float) $m->quantity : null,
                     'unit' => $m->unit,
                 ],
@@ -155,11 +146,8 @@ class ApplySyncBatch
                 'fks' => [],
                 'nullableFks' => [],
                 'hasHousehold' => true,
-                'parent' => null,
-                'with' => [],
                 'query' => fn (Household $h, bool $liveParents): Builder => $h->dinnerPlans()->getQuery(),
                 'serialize' => fn (DinnerPlan $m): array => [
-                    'id' => $m->uuid,
                     'name' => $m->name,
                     'start_date' => $m->start_date?->toDateString(),
                     'end_date' => $m->end_date?->toDateString(),
@@ -176,14 +164,9 @@ class ApplySyncBatch
                 'fks' => ['dinner_plan_id' => 'dinner_plans', 'dinner_id' => 'dinners'],
                 'nullableFks' => [],
                 'hasHousehold' => false,
-                'parent' => 'dinnerPlan',
-                'with' => ['dinnerPlan' => $withTrashed, 'dinner' => $withTrashed],
                 'query' => fn (Household $h, bool $liveParents): Builder => DinnerPlanEntry::query()
-                    ->whereHas('dinnerPlan', fn (Builder $q) => $this->parentScope($q, $h, $liveParents)),
+                    ->whereIn('dinner_plan_id', fn (QueryBuilder $q) => $this->parentIds($q, 'dinner_plans', $h, $liveParents)),
                 'serialize' => fn (DinnerPlanEntry $m): array => [
-                    'id' => $m->uuid,
-                    'dinner_plan_id' => $m->dinnerPlan?->uuid,
-                    'dinner_id' => $m->dinner?->uuid,
                     'scheduled_date' => $m->scheduled_date?->toDateString(),
                     'servings' => $m->servings,
                     'meal_type' => $m->meal_type->value,
@@ -204,12 +187,8 @@ class ApplySyncBatch
                 'fks' => ['dinner_plan_id' => 'dinner_plans'],
                 'nullableFks' => ['dinner_plan_id'],
                 'hasHousehold' => true,
-                'parent' => null,
-                'with' => ['dinnerPlan' => $withTrashed],
                 'query' => fn (Household $h, bool $liveParents): Builder => $h->shoppingLists()->getQuery(),
                 'serialize' => fn (ShoppingList $m): array => [
-                    'id' => $m->uuid,
-                    'dinner_plan_id' => $m->dinnerPlan?->uuid,
                     'name' => $m->name,
                 ],
                 'rules' => [
@@ -223,14 +202,9 @@ class ApplySyncBatch
                 'fks' => ['shopping_list_id' => 'shopping_lists', 'ingredient_id' => 'ingredients'],
                 'nullableFks' => ['ingredient_id'],
                 'hasHousehold' => false,
-                'parent' => 'shoppingList',
-                'with' => ['shoppingList' => $withTrashed, 'ingredient' => $withTrashed],
                 'query' => fn (Household $h, bool $liveParents): Builder => ShoppingListItem::query()
-                    ->whereHas('shoppingList', fn (Builder $q) => $this->parentScope($q, $h, $liveParents)),
+                    ->whereIn('shopping_list_id', fn (QueryBuilder $q) => $this->parentIds($q, 'shopping_lists', $h, $liveParents)),
                 'serialize' => fn (ShoppingListItem $m): array => [
-                    'id' => $m->uuid,
-                    'shopping_list_id' => $m->shoppingList?->uuid,
-                    'ingredient_id' => $m->ingredient?->uuid,
                     'name' => $m->name,
                     'quantity' => $m->quantity !== null ? (float) $m->quantity : null,
                     'unit' => $m->unit,
@@ -263,39 +237,114 @@ class ApplySyncBatch
         $resources = $this->resources();
         $this->assertBatchSize($changes);
 
-        return DB::transaction(function () use ($household, $cursor, $changes, $resources): array {
-            // Locks the household for the rest of the transaction: peers wait.
-            $version = $this->allocateVersion->handle($household->id);
+        $incoming = [];
+        foreach ($resources as $key => $resource) {
+            $rows = $changes[$key] ?? [];
+            if (is_array($rows) && $rows !== []) {
+                $incoming[$key] = array_values($rows);
+            }
+        }
+
+        // The routine poll: nothing to push and the device is already at the
+        // household's version. Answer from the household row the middleware
+        // loaded — no transaction, no lock, no table scans.
+        $current = (int) $household->sync_version;
+        if ($incoming === [] && $cursor !== null && $cursor >= $current) {
+            return [
+                'cursor' => $current,
+                'household_id' => $household->id,
+                'changes' => array_fill_keys(array_keys($resources), []),
+                'rejected' => [],
+                'remaps' => [],
+            ];
+        }
+
+        return DB::transaction(function () use ($household, $cursor, $incoming, $resources): array {
             $now = CarbonImmutable::now();
+            // A write batch locks the household for the rest of the transaction
+            // so peers' write batches wait; a pull just reads the committed version.
+            $committed = $this->committedVersion($household, lock: $incoming !== []);
+            $state = $this->newState($household, $resources);
 
-            $state = new SyncBatchState(
-                maps: [
-                    'ingredients' => $household->ingredients()->withTrashed()->pluck('id', 'uuid')->all(),
-                    'dinners' => $household->dinners()->withTrashed()->pluck('id', 'uuid')->all(),
-                    'dinner_plans' => $household->dinnerPlans()->withTrashed()->pluck('id', 'uuid')->all(),
-                    'shopping_lists' => $household->shoppingLists()->withTrashed()->pluck('id', 'uuid')->all(),
-                ],
-            );
-
-            foreach ($resources as $key => $resource) {
-                foreach ($changes[$key] ?? [] as $row) {
-                    $this->applyRow($household, $key, $resource, $row, $state, $version, $now);
+            foreach ($incoming as $key => $rows) {
+                $existing = $this->prefetch($resources[$key], $rows);
+                foreach ($rows as $row) {
+                    $this->applyRow($household, $key, $resources[$key], $row, $state, $existing, $now);
                 }
             }
 
             $outgoing = [];
             foreach ($resources as $key => $resource) {
-                $outgoing[$key] = $this->collectOutgoing($household, $resource, $cursor, $state->include[$key] ?? []);
+                $outgoing[$key] = $this->collectOutgoing($household, $key, $resource, $cursor, $state);
             }
 
             return [
-                'cursor' => $version,
+                'cursor' => $state->allocatedVersion() ?? $committed,
                 'household_id' => $household->id,
                 'changes' => $outgoing,
                 'rejected' => $state->rejected,
                 'remaps' => $state->remaps,
             ];
         });
+    }
+
+    private function committedVersion(Household $household, bool $lock): int
+    {
+        $query = Household::query()->whereKey($household->id);
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        return (int) $query->value('sync_version');
+    }
+
+    /**
+     * @param  array<string, array{model: class-string<Model>}>  $resources
+     */
+    private function newState(Household $household, array $resources): SyncBatchState
+    {
+        return new SyncBatchState(
+            loadMap: fn (string $key): array => $resources[$key]['model']::withTrashed()
+                ->where('household_id', $household->id)
+                ->pluck('id', 'uuid')
+                ->all(),
+            loadUuids: fn (string $key, array $ids): array => $resources[$key]['model']::withTrashed()
+                ->whereKey($ids)
+                ->pluck('uuid', 'id')
+                ->all(),
+            loadIngredientNames: function () use ($household): array {
+                $byName = [];
+                foreach ($household->ingredients()->orderBy('id')->get(['id', 'uuid', 'name']) as $ingredient) {
+                    $byName[SyncBatchState::nameKey($ingredient->name)] ??= ['id' => $ingredient->id, 'uuid' => $ingredient->uuid];
+                }
+
+                return $byName;
+            },
+            allocateVersion: fn (): int => $this->allocateVersion->handle($household->id),
+        );
+    }
+
+    /**
+     * Load every existing row an incoming batch refers to in one query, keyed
+     * by uuid (any household — ownership is checked per row).
+     *
+     * @param  array{model: class-string<Model>}  $resource
+     * @param  list<array<string, mixed>>  $rows
+     * @return array<string, Model&Syncable>
+     */
+    private function prefetch(array $resource, array $rows): array
+    {
+        $uuids = [];
+        foreach ($rows as $row) {
+            if (is_array($row) && is_string($row['id'] ?? null)) {
+                $uuids[$row['id']] = true;
+            }
+        }
+        if ($uuids === []) {
+            return [];
+        }
+
+        return $resource['model']::withTrashed()->whereIn('uuid', array_keys($uuids))->get()->keyBy('uuid')->all();
     }
 
     /**
@@ -317,8 +366,9 @@ class ApplySyncBatch
      *
      * @param  array{model: class-string<Model>, fields: list<string>, fks: array<string, string>, nullableFks: list<string>, hasHousehold: bool, rules: array<string, list<mixed>>}  $resource
      * @param  array<string, mixed>  $row
+     * @param  array<string, Model&Syncable>  $existing  prefetched rows by uuid; rows written here are added
      */
-    private function applyRow(Household $household, string $key, array $resource, array $row, SyncBatchState $state, int $version, CarbonImmutable $now): void
+    private function applyRow(Household $household, string $key, array $resource, array $row, SyncBatchState $state, array &$existing, CarbonImmutable $now): void
     {
         $uuid = $row['id'] ?? null;
         $isTombstone = ! empty($row['deleted_at']);
@@ -340,8 +390,7 @@ class ApplySyncBatch
             return;
         }
 
-        /** @var (Model&Syncable)|null $model */
-        $model = $resource['model']::withTrashed()->where('uuid', $uuid)->first();
+        $model = $existing[$uuid] ?? null;
 
         if ($model !== null && ! $this->isOwned($model, $resource, $household, $state)) {
             // Another household's row (or a uuid collision): behave as if it did not exist.
@@ -356,36 +405,40 @@ class ApplySyncBatch
             if ($model === null) {
                 return; // Deleted before it ever reached the server.
             }
-            $state->maps[$key][$uuid] = $model->getKey();
+            $state->remember($key, $uuid, $model->getKey());
             if ($this->serverIsNewer($model, $incomingUpdatedAt)) {
                 $state->include($key, $uuid);
 
                 return;
             }
-            $model->tombstone($incomingDeletedAt, $version);
+            $model->tombstone($incomingDeletedAt, $state->version());
+            if ($key === 'ingredients') {
+                $state->forgetIngredientName($model->name);
+            }
 
             return;
         }
 
         if ($model !== null) {
-            $state->maps[$key][$uuid] = $model->getKey();
+            $state->remember($key, $uuid, $model->getKey());
             if ($this->serverIsNewer($model, $incomingUpdatedAt)) {
                 // Keep the server copy and send it back so the client converges.
                 $state->include($key, $uuid);
 
                 return;
             }
-        } elseif ($key === 'ingredients' && ($existing = $this->sameNamedIngredient($household, $row['name'])) !== null) {
+        } elseif ($key === 'ingredients' && ($sameNamed = $state->ingredientNamed($row['name'])) !== null) {
             // Two devices created the same ingredient offline: merge onto the first.
-            $state->maps[$key][$uuid] = $existing->id;
-            $state->remaps[$key][$uuid] = $existing->uuid;
-            $state->include($key, $existing->uuid);
+            $state->alias($key, $uuid, $sameNamed['id']);
+            $state->remaps[$key][$uuid] = $sameNamed['uuid'];
+            $state->include($key, $sameNamed['uuid']);
 
             return;
         } else {
             $model = new $resource['model'];
             $model->setAttribute('uuid', $uuid);
         }
+        $previousName = $key === 'ingredients' && $model->exists ? $model->getOriginal('name') : null;
 
         $foreignKeys = $this->resolveForeignKeys($resource, $row, $state);
         if (is_string($foreignKeys)) {
@@ -407,10 +460,17 @@ class ApplySyncBatch
         $attributes['updated_at'] = $incomingUpdatedAt;
         $attributes['deleted_at'] = null; // A newer live version restores a tombstone.
 
-        $model->forceFill($attributes)->stampSync($version, $now);
+        $model->forceFill($attributes)->stampSync($state->version(), $now);
         Model::withoutTimestamps(fn () => $model->save());
 
-        $state->maps[$key][$uuid] = $model->getKey();
+        $existing[$uuid] = $model;
+        $state->remember($key, $uuid, $model->getKey());
+        if ($key === 'ingredients') {
+            if ($previousName !== null && SyncBatchState::nameKey($previousName) !== SyncBatchState::nameKey($model->name)) {
+                $state->forgetIngredientName($previousName);
+            }
+            $state->rememberIngredientName($model->name, $model->getKey(), $model->uuid);
+        }
     }
 
     /**
@@ -459,14 +519,7 @@ class ApplySyncBatch
         $column = array_key_first($resource['fks']);
         $parentKey = $resource['fks'][$column];
 
-        return in_array((int) $model->getAttribute($column), $state->maps[$parentKey], true);
-    }
-
-    private function sameNamedIngredient(Household $household, string $name): ?Ingredient
-    {
-        return $household->ingredients()
-            ->whereRaw('lower(name) = ?', [mb_strtolower(trim($name))])
-            ->first();
+        return $state->owns($parentKey, (int) $model->getAttribute($column));
     }
 
     /**
@@ -493,7 +546,7 @@ class ApplySyncBatch
                 return "Missing {$column}.";
             }
 
-            $parentId = $state->maps[$parentKey][$parentUuid] ?? null;
+            $parentId = is_string($parentUuid) ? $state->id($parentKey, $parentUuid) : null;
             if ($parentId === null) {
                 return "Unknown {$column} {$parentUuid}.";
             }
@@ -504,28 +557,29 @@ class ApplySyncBatch
     }
 
     /**
-     * Scope a child's parent relation to the household — live parents only for
-     * a first sync, so a fresh client never receives children of a tombstone.
+     * The household's parent ids for a child pull, as a subselect on the
+     * parent's `(household_id, sync_version)` index — live parents only for a
+     * first sync, so a fresh client never receives children of a tombstone.
      */
-    private function parentScope(Builder $query, Household $household, bool $liveParents): void
+    private function parentIds(QueryBuilder $query, string $table, Household $household, bool $liveParents): void
     {
-        if (! $liveParents) {
-            $query->withTrashed();
+        $query->select('id')->from($table)->where('household_id', $household->id);
+        if ($liveParents) {
+            $query->whereNull('deleted_at');
         }
-        $query->where('household_id', $household->id);
     }
 
     /**
      * Collect the household's rows above the client's cursor (tombstones
      * included), plus any explicitly included uuids.
      *
-     * @param  array{with: array<string, callable>, query: callable, serialize: callable}  $resource
-     * @param  list<string>  $include
+     * @param  array{fks: array<string, string>, query: callable, serialize: callable}  $resource
      * @return array<int, array<string, mixed>>
      */
-    private function collectOutgoing(Household $household, array $resource, ?int $cursor, array $include): array
+    private function collectOutgoing(Household $household, string $key, array $resource, ?int $cursor, SyncBatchState $state): array
     {
-        $query = ($resource['query'])($household, $cursor === null)->withTrashed()->with($resource['with']);
+        $include = $state->include[$key] ?? [];
+        $query = ($resource['query'])($household, $cursor === null)->withTrashed();
 
         if ($cursor === null) {
             $query->where(fn (Builder $q) => $q->whereNull('deleted_at')->orWhereIn('uuid', $include));
@@ -533,18 +587,34 @@ class ApplySyncBatch
             $query->where(fn (Builder $q) => $q->where('sync_version', '>', $cursor)->orWhereIn('uuid', $include));
         }
 
-        return $query->orderBy('id')->get()
-            ->map(fn (Model $model): array => $this->serializeRow($resource, $model))
+        $models = $query->orderBy('id')->get();
+        if ($models->isEmpty()) {
+            return [];
+        }
+
+        // Parent uuids come from the maps already loaded for the push, or one
+        // lookup of exactly the parent ids these rows reference.
+        foreach ($resource['fks'] as $column => $parentKey) {
+            $state->resolveUuids($parentKey, $models->pluck($column)->all());
+        }
+
+        return $models
+            ->map(fn (Model $model): array => $this->serializeRow($resource, $model, $state))
             ->all();
     }
 
     /**
-     * @param  array{serialize: callable}  $resource
+     * @param  array{fks: array<string, string>, serialize: callable}  $resource
      * @return array<string, mixed>
      */
-    private function serializeRow(array $resource, Model $model): array
+    private function serializeRow(array $resource, Model $model, SyncBatchState $state): array
     {
-        return array_merge(($resource['serialize'])($model), [
+        $foreignKeys = [];
+        foreach ($resource['fks'] as $column => $parentKey) {
+            $foreignKeys[$column] = $state->uuidOf($parentKey, $model->getAttribute($column));
+        }
+
+        return array_merge(['id' => $model->getAttribute('uuid')], $foreignKeys, ($resource['serialize'])($model), [
             'created_at' => $model->created_at?->toISOString(),
             'updated_at' => $model->updated_at?->toISOString(),
             'deleted_at' => $model->getAttribute('deleted_at')?->toISOString(),

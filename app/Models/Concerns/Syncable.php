@@ -54,17 +54,45 @@ trait Syncable
             $model->stampSync(app(AllocateSyncVersion::class)->handle($model->syncHouseholdId()));
         });
 
-        // SoftDeletes writes `deleted_at` with a direct query, bypassing `saving`,
-        // so a REST delete stamps its version here and tombstones its children.
+        // A REST delete has stamped its version in `runSoftDelete()` below; the
+        // children follow under the same version.
         static::registerModelEvent('trashed', function (self $model): void {
-            $version = app(AllocateSyncVersion::class)->handle($model->syncHouseholdId());
-            $model->newQueryWithoutScopes()->whereKey($model->getKey())->update([
-                'sync_version' => $version,
-                'synced_at' => now(),
-            ]);
-            $model->setAttribute('sync_version', $version);
-            $model->tombstoneChildren($model->getAttribute('deleted_at'), $version);
+            $model->tombstoneChildren($model->getAttribute('deleted_at'), (int) $model->getAttribute('sync_version'));
         });
+    }
+
+    /**
+     * SoftDeletes writes `deleted_at` with a direct query, bypassing `saving`.
+     * Stamp the version in that same UPDATE (one statement, not two) so the
+     * tombstone and its version become visible together.
+     */
+    protected function runSoftDelete(): void
+    {
+        $query = $this->setKeysForSaveQuery($this->newModelQuery());
+
+        $time = $this->freshTimestamp();
+        $version = app(AllocateSyncVersion::class)->handle($this->syncHouseholdId());
+
+        $columns = [
+            $this->getDeletedAtColumn() => $this->fromDateTime($time),
+            'sync_version' => $version,
+            'synced_at' => $this->fromDateTime($time),
+        ];
+
+        $this->{$this->getDeletedAtColumn()} = $time;
+        $this->setAttribute('sync_version', $version);
+        $this->setAttribute('synced_at', $time);
+
+        if ($this->usesTimestamps() && ! is_null($this->getUpdatedAtColumn())) {
+            $this->{$this->getUpdatedAtColumn()} = $time;
+            $columns[$this->getUpdatedAtColumn()] = $this->fromDateTime($time);
+        }
+
+        $query->update($columns);
+
+        $this->syncOriginalAttributes(array_keys($columns));
+
+        $this->fireModelEvent('trashed', false);
     }
 
     public function initializeSyncable(): void
@@ -114,4 +142,21 @@ trait Syncable
      * parent. Override in models that own children.
      */
     protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void {}
+
+    /**
+     * The columns a bulk child tombstone writes — what `tombstone()` sets on a
+     * single model, as one UPDATE over a relation (live rows only, via the
+     * SoftDeletes scope).
+     *
+     * @return array<string, mixed>
+     */
+    protected function tombstoneStamp(CarbonInterface $deletedAt, int $version): array
+    {
+        return [
+            'deleted_at' => $deletedAt,
+            'updated_at' => $deletedAt,
+            'sync_version' => $version,
+            'synced_at' => now(),
+        ];
+    }
 }

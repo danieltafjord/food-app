@@ -83,7 +83,8 @@ class Dinner extends Model
 
     protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
     {
-        $this->items()->get()->each(fn (DinnerItem $item) => $item->tombstone($deletedAt, $version));
-        $this->planEntries()->get()->each(fn (DinnerPlanEntry $entry) => $entry->tombstone($deletedAt, $version));
+        // Leaf tables: one UPDATE each, no per-row model round-trips.
+        $this->items()->update($this->tombstoneStamp($deletedAt, $version));
+        $this->planEntries()->update($this->tombstoneStamp($deletedAt, $version));
     }
 }

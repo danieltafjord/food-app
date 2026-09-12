@@ -45,6 +45,10 @@ class DinnerItem extends Model
 
     public function syncHouseholdId(): int
     {
+        if ($this->relationLoaded('dinner') && $this->dinner !== null) {
+            return (int) $this->dinner->household_id;
+        }
+
         return (int) Dinner::withTrashed()->whereKey($this->dinner_id)->value('household_id');
     }
 }

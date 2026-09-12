@@ -66,6 +66,6 @@ class DinnerPlan extends Model
 
     protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
     {
-        $this->entries()->get()->each(fn (DinnerPlanEntry $entry) => $entry->tombstone($deletedAt, $version));
+        $this->entries()->update($this->tombstoneStamp($deletedAt, $version));
     }
 }

@@ -52,12 +52,15 @@ class Ingredient extends Model
      */
     protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
     {
-        $this->dinnerItems()->get()->each(fn (DinnerItem $item) => $item->tombstone($deletedAt, $version));
+        $this->dinnerItems()->update($this->tombstoneStamp($deletedAt, $version));
 
-        $this->shoppingListItems()->get()->each(function (ShoppingListItem $item) use ($version): void {
-            $item->forceFill(['ingredient_id' => null, 'name' => $item->name ?? $this->name])
-                ->stampSync($version)
-                ->save();
-        });
+        // Lines without their own text inherit the ingredient's name, then every
+        // line is detached — two bulk statements instead of a save per line.
+        $this->shoppingListItems()->whereNull('name')->update(['name' => $this->name]);
+        $this->shoppingListItems()->update([
+            'ingredient_id' => null,
+            'sync_version' => $version,
+            'synced_at' => now(),
+        ]);
     }
 }

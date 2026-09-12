@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
     ->name('api.v1.')
-    ->middleware(['auth:api', 'throttle:api'])
+    ->middleware(['auth:api', 'throttle:api', 'api.transaction'])
     ->group(function () {
         // Authenticated user + token management
         Route::get('me', [MeController::class, 'show'])->name('me');
