@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\OAuth\ApproveHouseholdAuthorizationController;
 use App\Http\Controllers\PublicPageController;
 use App\Http\Controllers\RedirectToPreferredLocaleController;
 use App\Http\Controllers\SitemapController;
@@ -41,5 +42,10 @@ Route::prefix('{locale}')
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
 });
+
+// Consent for third-party OAuth clients (MCP connectors): approve + pick a household.
+Route::post('oauth/authorize/household', [ApproveHouseholdAuthorizationController::class, 'approve'])
+    ->middleware('auth')
+    ->name('oauth.household-authorizations.approve');
 
 require __DIR__.'/settings.php';

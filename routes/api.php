@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\Public\V1\MeController as PublicMeController;
+use App\Http\Controllers\Api\Public\V1\TodayController;
 use App\Http\Controllers\Api\V1\Auth\DeviceController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\DinnerController;
@@ -20,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
     ->name('api.v1.')
-    ->middleware(['auth:api', 'throttle:api', 'api.transaction'])
+    ->middleware(['auth:api', 'api.app-only', 'throttle:api', 'api.transaction'])
     ->group(function () {
         // Authenticated user + token management
         Route::get('me', [MeController::class, 'show'])->name('me');
@@ -85,4 +87,32 @@ Route::prefix('v1')
             Route::patch('shopping-lists/{shoppingList}/items/{item}/check', [ShoppingListItemController::class, 'check'])->name('shopping-lists.items.check');
             Route::delete('shopping-lists/{shoppingList}/items/{item}', [ShoppingListItemController::class, 'destroy'])->name('shopping-lists.items.destroy');
         });
+    });
+
+/*
+ * Public API for user-created API tokens (agents, Home Assistant, scripts).
+ * Same actions and resources as the mobile API, but scoped to the household
+ * the token is pinned to and limited to everyday household data.
+ */
+Route::prefix('public/v1')
+    ->name('api.public.v1.')
+    ->middleware(['auth:api', 'throttle:public-api', 'api.transaction', 'api.token'])
+    ->group(function () {
+        Route::get('me', PublicMeController::class)->name('me');
+        Route::get('today', TodayController::class)->name('today');
+
+        Route::apiResource('ingredients', IngredientController::class);
+        Route::apiResource('dinners', DinnerController::class);
+
+        Route::apiResource('dinner-plans', DinnerPlanController::class)->parameters(['dinner-plans' => 'dinnerPlan']);
+        Route::apiResource('dinner-plans.entries', DinnerPlanEntryController::class)
+            ->parameters(['dinner-plans' => 'dinnerPlan'])
+            ->only(['store', 'update', 'destroy']);
+        Route::post('dinner-plans/{dinnerPlan}/shopping-list', GenerateShoppingListController::class)->name('dinner-plans.shopping-list.generate');
+
+        Route::apiResource('shopping-lists', ShoppingListController::class)->parameters(['shopping-lists' => 'shoppingList']);
+        Route::apiResource('shopping-lists.items', ShoppingListItemController::class)
+            ->parameters(['shopping-lists' => 'shoppingList'])
+            ->only(['store', 'update', 'destroy']);
+        Route::patch('shopping-lists/{shoppingList}/items/{item}/check', [ShoppingListItemController::class, 'check'])->name('shopping-lists.items.check');
     });

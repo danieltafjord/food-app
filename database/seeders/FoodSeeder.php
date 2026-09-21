@@ -20,7 +20,12 @@ class FoodSeeder extends Seeder
     {
         $household = Household::factory()->create(['name' => 'Our Household']);
 
-        $owner = User::factory()->create(['name' => 'Daniel', 'email' => 'daniel@example.com']);
+        // Local test login: daniel@atami.no / password. Reuses the account if it already exists.
+        $owner = User::query()->updateOrCreate(
+            ['email' => 'daniel@atami.no'],
+            ['name' => 'Daniel', 'password' => 'password'],
+        );
+        $owner->forceFill(['email_verified_at' => now()])->save();
         $partner = User::factory()->create(['name' => 'Partner', 'email' => 'partner@example.com']);
 
         $household->members()->attach([

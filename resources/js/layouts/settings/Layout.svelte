@@ -6,6 +6,7 @@
     import { Separator } from '@/components/ui/separator';
     import { currentUrlState } from '@/lib/currentUrl.svelte';
     import { toUrl } from '@/lib/utils';
+    import { index as apiTokens } from '@/routes/api-tokens';
     import { edit as editAppearance } from '@/routes/appearance';
     import { edit as editProfile } from '@/routes/profile';
     import { edit as editSecurity } from '@/routes/security';
@@ -25,6 +26,10 @@
         {
             title: 'Security',
             href: editSecurity(),
+        },
+        {
+            title: 'API tokens',
+            href: apiTokens(),
         },
         {
             title: 'Appearance',

@@ -2,17 +2,20 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\ShoppingLists\CreateShoppingList;
+use App\Actions\ShoppingLists\UpdateShoppingList;
 use App\Data\ShoppingListData;
 use App\Data\ShoppingListInputData;
-use App\Models\Household;
 use App\Models\ShoppingList;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Validation\ValidationException;
 use Spatie\LaravelData\DataCollection;
 
 class ShoppingListController extends ApiController
 {
+    /**
+     * @return DataCollection<int, ShoppingListData>
+     */
     public function index(Request $request): DataCollection
     {
         $lists = $this->currentHousehold($request)->shoppingLists()
@@ -24,18 +27,9 @@ class ShoppingListController extends ApiController
         return ShoppingListData::collect($lists, DataCollection::class);
     }
 
-    public function store(ShoppingListInputData $data, Request $request): ShoppingListData
+    public function store(ShoppingListInputData $data, Request $request, CreateShoppingList $action): ShoppingListData
     {
-        $household = $this->currentHousehold($request);
-        $this->assertPlanBelongsToHousehold($household, $data->dinnerPlanId);
-
-        $list = $household->shoppingLists()->create([
-            'name' => $data->name,
-            'dinner_plan_id' => $data->dinnerPlanId,
-            'created_by_user_id' => $request->user()->id,
-        ]);
-
-        return ShoppingListData::fromList($list->load('items.ingredient'));
+        return ShoppingListData::fromList($action->handle($this->currentHousehold($request), $data, $request->user()));
     }
 
     public function show(Request $request, ShoppingList $shoppingList): ShoppingListData
@@ -45,17 +39,11 @@ class ShoppingListController extends ApiController
         return ShoppingListData::fromList($shoppingList->load('items.ingredient'));
     }
 
-    public function update(ShoppingListInputData $data, Request $request, ShoppingList $shoppingList): ShoppingListData
+    public function update(ShoppingListInputData $data, Request $request, ShoppingList $shoppingList, UpdateShoppingList $action): ShoppingListData
     {
         $this->ensureBelongsToHousehold($request, $shoppingList);
-        $this->assertPlanBelongsToHousehold($this->currentHousehold($request), $data->dinnerPlanId);
 
-        $shoppingList->update([
-            'name' => $data->name,
-            'dinner_plan_id' => $data->dinnerPlanId,
-        ]);
-
-        return ShoppingListData::fromList($shoppingList->load('items.ingredient'));
+        return ShoppingListData::fromList($action->handle($shoppingList, $data));
     }
 
     public function destroy(Request $request, ShoppingList $shoppingList): Response
@@ -65,14 +53,5 @@ class ShoppingListController extends ApiController
         $shoppingList->delete();
 
         return response()->noContent();
-    }
-
-    private function assertPlanBelongsToHousehold(Household $household, ?int $planId): void
-    {
-        if (! is_null($planId) && ! $household->dinnerPlans()->whereKey($planId)->exists()) {
-            throw ValidationException::withMessages([
-                'dinner_plan_id' => 'That plan does not belong to this household.',
-            ]);
-        }
     }
 }

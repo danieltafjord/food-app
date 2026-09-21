@@ -2,9 +2,12 @@
 
 namespace App\Actions\Households;
 
+use App\Models\ApiTokenDetail;
 use App\Models\Household;
+use App\Models\OAuthHouseholdGrant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Laravel\Passport\Passport;
 
 class RemoveMember
 {
@@ -23,6 +26,17 @@ class RemoveMember
             }
 
             $household->members()->detach($member->id);
+
+            // API tokens pinned to this household are useless to a non-member.
+            Passport::token()->newQuery()
+                ->where('user_id', $member->id)
+                ->whereIn('id', ApiTokenDetail::query()->where('household_id', $household->id)->select('token_id'))
+                ->update(['revoked' => true]);
+
+            OAuthHouseholdGrant::query()
+                ->where('user_id', $member->id)
+                ->where('household_id', $household->id)
+                ->delete();
 
             if ($member->current_household_id === $household->id) {
                 $member->update(['current_household_id' => null]);

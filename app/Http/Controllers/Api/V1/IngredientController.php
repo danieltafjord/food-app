@@ -2,18 +2,21 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Ingredients\CreateIngredient;
 use App\Actions\Ingredients\DeleteIngredient;
+use App\Actions\Ingredients\UpdateIngredient;
 use App\Data\IngredientData;
 use App\Data\IngredientInputData;
-use App\Models\Household;
 use App\Models\Ingredient;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Validation\ValidationException;
 use Spatie\LaravelData\DataCollection;
 
 class IngredientController extends ApiController
 {
+    /**
+     * @return DataCollection<int, IngredientData>
+     */
     public function index(Request $request): DataCollection
     {
         $ingredients = $this->currentHousehold($request)->ingredients()->orderBy('name')->get();
@@ -21,17 +24,9 @@ class IngredientController extends ApiController
         return IngredientData::collect($ingredients, DataCollection::class);
     }
 
-    public function store(IngredientInputData $data, Request $request): IngredientData
+    public function store(IngredientInputData $data, Request $request, CreateIngredient $action): IngredientData
     {
-        $this->assertNameIsAvailable($this->currentHousehold($request), $data->name);
-
-        $ingredient = $this->currentHousehold($request)->ingredients()->create([
-            'name' => $data->name,
-            'default_unit' => $data->defaultUnit,
-            'category' => $data->category,
-        ]);
-
-        return IngredientData::from($ingredient);
+        return IngredientData::from($action->handle($this->currentHousehold($request), $data));
     }
 
     public function show(Request $request, Ingredient $ingredient): IngredientData
@@ -41,35 +36,11 @@ class IngredientController extends ApiController
         return IngredientData::from($ingredient);
     }
 
-    public function update(IngredientInputData $data, Request $request, Ingredient $ingredient): IngredientData
+    public function update(IngredientInputData $data, Request $request, Ingredient $ingredient, UpdateIngredient $action): IngredientData
     {
         $this->ensureBelongsToHousehold($request, $ingredient);
-        $this->assertNameIsAvailable($this->currentHousehold($request), $data->name, $ingredient);
 
-        $ingredient->update([
-            'name' => $data->name,
-            'default_unit' => $data->defaultUnit,
-            'category' => $data->category,
-        ]);
-
-        return IngredientData::from($ingredient);
-    }
-
-    /**
-     * Names are unique per household among live ingredients (case-insensitive).
-     */
-    private function assertNameIsAvailable(Household $household, string $name, ?Ingredient $except = null): void
-    {
-        $taken = $household->ingredients()
-            ->whereRaw('lower(name) = ?', [mb_strtolower(trim($name))])
-            ->when($except, fn ($q) => $q->whereKeyNot($except->id))
-            ->exists();
-
-        if ($taken) {
-            throw ValidationException::withMessages([
-                'name' => 'An ingredient with this name already exists.',
-            ]);
-        }
+        return IngredientData::from($action->handle($ingredient, $data));
     }
 
     public function destroy(Request $request, Ingredient $ingredient, DeleteIngredient $action): Response

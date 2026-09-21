@@ -3,9 +3,13 @@
 namespace App\Providers;
 
 use App\Actions\Sync\AllocateSyncVersion;
+use App\Enums\ApiTokenScope;
 use App\Models\Passport\Client;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterval;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Http\Request;
@@ -40,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->configureDefaults();
         $this->configurePassport();
+        $this->configureApiDocs();
         $this->configureRateLimiting();
         $this->configureSyncVersions();
     }
@@ -62,6 +67,22 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)
             ->by($request->user()?->id ?: $request->ip()));
+
+        // Each API token gets its own budget so an integration cannot starve
+        // the mobile app (or another integration) of requests.
+        RateLimiter::for('public-api', fn (Request $request) => Limit::perMinute(60)
+            ->by('token:'.($request->user()?->token()?->oauth_access_token_id ?: $request->ip())));
+    }
+
+    /**
+     * The OpenAPI docs (/docs/api) cover the public API only, which is
+     * authenticated with a user-created bearer token.
+     */
+    protected function configureApiDocs(): void
+    {
+        Scramble::configure()->withDocumentTransformers(function (OpenApi $openApi): void {
+            $openApi->secure(SecurityScheme::http('bearer'));
+        });
     }
 
     /**
@@ -73,7 +94,10 @@ class AppServiceProvider extends ServiceProvider
 
         Passport::tokensExpireIn(CarbonInterval::days(15));
         Passport::refreshTokensExpireIn(CarbonInterval::days(30));
-        Passport::personalAccessTokensExpireIn(CarbonInterval::months(6));
+        Passport::personalAccessTokensExpireIn(CarbonInterval::year());
+
+        // routes/ai.php may already have registered MCP's scope; keep it.
+        Passport::tokensCan([...Passport::$scopes, ...ApiTokenScope::descriptions()]);
 
         // Binds the AuthorizationViewResponse contract that the /oauth/authorize
         // controller resolves. First-party clients skip the consent screen, but

@@ -87,6 +87,7 @@ it('refuses refreshing an OAuth session after logout or device revocation', func
     $client = app(ClientRepository::class)->createAuthorizationCodeGrantClient(
         name: 'Mobile', redirectUris: ['foodapp://oauth/callback'], confidential: false,
     );
+    $client->forceFill(['trusted' => true])->save();
     $verifier = str_repeat('a', 64);
     $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
     $authorization = $this->actingAs($user)->get('/oauth/authorize?'.http_build_query([

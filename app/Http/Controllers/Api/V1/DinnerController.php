@@ -13,6 +13,9 @@ use Spatie\LaravelData\DataCollection;
 
 class DinnerController extends ApiController
 {
+    /**
+     * @return DataCollection<int, DinnerData>
+     */
     public function index(Request $request): DataCollection
     {
         $dinners = $this->currentHousehold($request)->dinners()

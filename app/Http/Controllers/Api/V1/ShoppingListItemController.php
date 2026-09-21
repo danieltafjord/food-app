@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\ShoppingLists\AddShoppingListItem;
+use App\Actions\ShoppingLists\CheckShoppingListItem;
 use App\Actions\ShoppingLists\UpdateShoppingListItem;
 use App\Data\CheckItemInputData;
 use App\Data\ShoppingListItemData;
@@ -29,14 +30,12 @@ class ShoppingListItemController extends ApiController
         return ShoppingListItemData::fromItem($action->handle($item, $data));
     }
 
-    public function check(CheckItemInputData $data, Request $request, ShoppingList $shoppingList, ShoppingListItem $item): ShoppingListItemData
+    public function check(CheckItemInputData $data, Request $request, ShoppingList $shoppingList, ShoppingListItem $item, CheckShoppingListItem $action): ShoppingListItemData
     {
         $this->ensureBelongsToHousehold($request, $shoppingList);
         $this->ensureItemBelongs($shoppingList, $item);
 
-        $item->update(['is_checked' => $data->checked]);
-
-        return ShoppingListItemData::fromItem($item->load('ingredient'));
+        return ShoppingListItemData::fromItem($action->handle($item, $data->checked));
     }
 
     public function destroy(Request $request, ShoppingList $shoppingList, ShoppingListItem $item): Response

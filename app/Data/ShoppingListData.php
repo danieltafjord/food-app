@@ -2,6 +2,7 @@
 
 namespace App\Data;
 
+use App\Data\OpenApi\ItemsOf;
 use App\Models\ShoppingList;
 use App\Models\ShoppingListItem;
 use Spatie\LaravelData\Data;
@@ -15,6 +16,7 @@ class ShoppingListData extends Data
         public int $id,
         public string $name,
         public ?int $dinnerPlanId,
+        #[ItemsOf(ShoppingListItemData::class)]
         public array $items,
     ) {}
 

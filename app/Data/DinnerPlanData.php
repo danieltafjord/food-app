@@ -2,6 +2,7 @@
 
 namespace App\Data;
 
+use App\Data\OpenApi\ItemsOf;
 use App\Models\DinnerPlan;
 use App\Models\DinnerPlanEntry;
 use Carbon\CarbonImmutable;
@@ -17,6 +18,7 @@ class DinnerPlanData extends Data
         public string $name,
         public ?CarbonImmutable $startDate,
         public ?CarbonImmutable $endDate,
+        #[ItemsOf(DinnerPlanEntryData::class)]
         public array $entries,
     ) {}
 

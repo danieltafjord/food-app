@@ -11,13 +11,14 @@ function pkceChallenge(string $verifier): string
     return rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
 }
 
-it('skips consent for a first-party client and redirects with an authorization code', function () {
+it('skips consent for a trusted client and redirects with an authorization code', function () {
     $client = app(ClientRepository::class)->createAuthorizationCodeGrantClient(
         name: 'Food App Mobile',
         redirectUris: ['foodapp://oauth/callback'],
         confidential: false,
         user: null,
     );
+    $client->forceFill(['trusted' => true])->save();
 
     $response = $this->actingAs(User::factory()->create())
         ->get('/oauth/authorize?'.http_build_query([

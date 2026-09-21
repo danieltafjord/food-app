@@ -2,6 +2,7 @@
 
 namespace App\Data;
 
+use App\Data\OpenApi\ItemsOf;
 use App\Models\Dinner;
 use App\Models\DinnerItem;
 use Spatie\LaravelData\Data;
@@ -16,6 +17,7 @@ class DinnerData extends Data
         public string $name,
         public int $defaultServings,
         public ?string $notes,
+        #[ItemsOf(DinnerItemData::class)]
         public array $items,
     ) {}
 

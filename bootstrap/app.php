@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Middleware\AuthenticateApiToken;
 use App\Http\Middleware\EnsureActiveHousehold;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RejectApiTokens;
 use App\Http\Middleware\WrapWritesInTransaction;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -33,10 +35,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'household.active' => EnsureActiveHousehold::class,
             'api.transaction' => WrapWritesInTransaction::class,
+            'api.token' => AuthenticateApiToken::class,
+            'api.app-only' => RejectApiTokens::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*'),
+            fn (Request $request) => $request->is('api/*', 'mcp'),
         );
     })->create();

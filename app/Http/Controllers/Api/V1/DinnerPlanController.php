@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\DinnerPlans\CreateDinnerPlan;
+use App\Actions\DinnerPlans\UpdateDinnerPlan;
 use App\Data\DinnerPlanData;
 use App\Data\DinnerPlanInputData;
 use App\Models\DinnerPlan;
@@ -11,6 +13,9 @@ use Spatie\LaravelData\DataCollection;
 
 class DinnerPlanController extends ApiController
 {
+    /**
+     * @return DataCollection<int, DinnerPlanData>
+     */
     public function index(Request $request): DataCollection
     {
         $plans = $this->currentHousehold($request)->dinnerPlans()
@@ -22,16 +27,9 @@ class DinnerPlanController extends ApiController
         return DinnerPlanData::collect($plans, DataCollection::class);
     }
 
-    public function store(DinnerPlanInputData $data, Request $request): DinnerPlanData
+    public function store(DinnerPlanInputData $data, Request $request, CreateDinnerPlan $action): DinnerPlanData
     {
-        $plan = $this->currentHousehold($request)->dinnerPlans()->create([
-            'name' => $data->name,
-            'start_date' => $data->startDate,
-            'end_date' => $data->endDate,
-            'created_by_user_id' => $request->user()->id,
-        ]);
-
-        return DinnerPlanData::fromPlan($plan->load('entries.dinner'));
+        return DinnerPlanData::fromPlan($action->handle($this->currentHousehold($request), $data, $request->user()));
     }
 
     public function show(Request $request, DinnerPlan $dinnerPlan): DinnerPlanData
@@ -41,17 +39,11 @@ class DinnerPlanController extends ApiController
         return DinnerPlanData::fromPlan($dinnerPlan->load('entries.dinner'));
     }
 
-    public function update(DinnerPlanInputData $data, Request $request, DinnerPlan $dinnerPlan): DinnerPlanData
+    public function update(DinnerPlanInputData $data, Request $request, DinnerPlan $dinnerPlan, UpdateDinnerPlan $action): DinnerPlanData
     {
         $this->ensureBelongsToHousehold($request, $dinnerPlan);
 
-        $dinnerPlan->update([
-            'name' => $data->name,
-            'start_date' => $data->startDate,
-            'end_date' => $data->endDate,
-        ]);
-
-        return DinnerPlanData::fromPlan($dinnerPlan->load('entries.dinner'));
+        return DinnerPlanData::fromPlan($action->handle($dinnerPlan, $data));
     }
 
     public function destroy(Request $request, DinnerPlan $dinnerPlan): Response

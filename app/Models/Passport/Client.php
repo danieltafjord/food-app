@@ -11,13 +11,14 @@ class Client extends BaseClient
     /**
      * Determine if the client should skip the authorization prompt.
      *
-     * First-party clients (our own mobile app and Svelte backoffice) are
-     * trusted, so the OAuth consent screen is bypassed for them.
+     * Only clients an administrator has marked as trusted (our own mobile
+     * app) bypass the consent screen. Being ownerless is not enough: MCP
+     * clients register themselves dynamically and are ownerless too.
      *
      * @param  array<int, Scope>  $scopes
      */
     public function skipsAuthorization(Authenticatable $user, array $scopes): bool
     {
-        return $this->firstParty();
+        return (bool) $this->trusted;
     }
 }

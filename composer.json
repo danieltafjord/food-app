@@ -11,10 +11,12 @@
     "require": {
         "php": "^8.4.1",
         "aws/aws-sdk-php": "^3.395",
+        "dedoc/scramble": "^0.13.45",
         "inertiajs/inertia-laravel": "^3.0",
         "laravel/chisel": "^0.1.0",
         "laravel/fortify": "^1.37.2",
         "laravel/framework": "^13.19",
+        "laravel/mcp": "^1.0",
         "laravel/passport": "^13.0",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
