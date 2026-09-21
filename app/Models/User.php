@@ -26,6 +26,12 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'ai_categorization_enabled' => false,
+        'ai_suggestions_enabled' => false,
+    ];
+
     /**
      * Get the attributes that should be cast.
      *
@@ -37,6 +43,8 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'ai_categorization_enabled' => 'boolean',
+            'ai_suggestions_enabled' => 'boolean',
             'theme' => Theme::class,
             'locale' => AppLocale::class,
         ];

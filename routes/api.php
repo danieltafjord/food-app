@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Public\V1\MeController as PublicMeController;
 use App\Http\Controllers\Api\Public\V1\TodayController;
+use App\Http\Controllers\Api\V1\AiController;
 use App\Http\Controllers\Api\V1\Auth\DeviceController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\DinnerController;
@@ -115,4 +116,14 @@ Route::prefix('public/v1')
             ->parameters(['shopping-lists' => 'shoppingList'])
             ->only(['store', 'update', 'destroy']);
         Route::patch('shopping-lists/{shoppingList}/items/{item}/check', [ShoppingListItemController::class, 'check'])->name('shopping-lists.items.check');
+    });
+
+// AI calls never hold the API write transaction across provider requests.
+Route::prefix('v1/ai')->name('api.v1.ai.')
+    ->middleware(['auth:api', 'api.app-only', 'throttle:api', 'household.active'])
+    ->group(function () {
+        Route::get('settings', [AiController::class, 'settings'])->name('settings');
+        Route::patch('settings', [AiController::class, 'updateSettings'])->name('settings.update');
+        Route::post('categorize', [AiController::class, 'categorize'])->middleware('throttle:ai')->name('categorize');
+        Route::post('suggest', [AiController::class, 'suggest'])->middleware('throttle:ai')->name('suggest');
     });

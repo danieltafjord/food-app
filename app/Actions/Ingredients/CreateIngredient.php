@@ -18,6 +18,7 @@ class CreateIngredient
             'name' => $data->name,
             'default_unit' => $data->defaultUnit,
             'category' => $data->category,
+            'category_source' => 'user',
         ]);
     }
 }

@@ -19,7 +19,7 @@ class EnsureActiveHousehold
 
         // Membership straight off the pivot's (household_id, user_id) index —
         // no join through users.
-        $locksHousehold = ! $request->isMethodSafe() && ! $request->routeIs('api.v1.sync');
+        $locksHousehold = ! $request->isMethodSafe() && ! $request->routeIs('api.v1.sync', 'api.v1.ai.*');
         $household = $user?->currentHousehold()
             ->whereExists(fn ($query) => $query
                 ->from('household_user')

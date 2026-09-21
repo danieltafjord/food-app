@@ -89,7 +89,7 @@ class ApplySyncBatch
         return [
             'ingredients' => [
                 'model' => Ingredient::class,
-                'fields' => ['name', 'default_unit', 'category'],
+                'fields' => ['name', 'default_unit', 'category', 'category_source'],
                 'fks' => [],
                 'nullableFks' => [],
                 'hasHousehold' => true,
@@ -98,11 +98,13 @@ class ApplySyncBatch
                     'name' => $m->name,
                     'default_unit' => $m->default_unit,
                     'category' => $m->category,
+                    'category_source' => $m->category_source,
                 ],
                 'rules' => [
                     'name' => ['required', 'string', 'max:255'],
                     'default_unit' => ['nullable', 'string', 'max:50'],
                     'category' => ['nullable', 'string', 'max:50'],
+                    'category_source' => ['sometimes', 'nullable', 'in:user,dictionary,ai'],
                 ],
             ],
             'dinners' => [
@@ -470,6 +472,10 @@ class ApplySyncBatch
             if (array_key_exists($field, $row)) {
                 $attributes[$field] = $row[$field];
             }
+        }
+        if ($key === 'ingredients' && $model->exists && array_key_exists('category', $row)
+            && ! array_key_exists('category_source', $row) && $row['category'] !== $model->category) {
+            $attributes['category_source'] = 'user';
         }
         if ($resource['hasHousehold']) {
             $attributes['household_id'] = $household->id;

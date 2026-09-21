@@ -22,6 +22,7 @@ class Ingredient extends Model
         'name',
         'default_unit',
         'category',
+        'category_source',
     ];
 
     /** @return BelongsTo<Household, $this> */
