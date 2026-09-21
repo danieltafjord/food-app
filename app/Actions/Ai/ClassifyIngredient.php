@@ -25,6 +25,8 @@ class ClassifyIngredient
         'beverages' => 'Drinks, coffee and tea',
         'household' => 'Cleaning products and household supplies',
         'personal_care' => 'Toiletries and personal care',
+        'pets' => 'Pet food, treats, cat litter and other pet supplies',
+        'baby' => 'Baby diapers, baby wipes, infant formula, baby food and other baby supplies',
         'other' => 'Unknown, ambiguous or not a recognizable grocery product',
     ];
 

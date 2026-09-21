@@ -6,6 +6,7 @@ use App\Actions\Dinners\CreateDinner;
 use App\Actions\Dinners\UpdateDinner;
 use App\Data\DinnerData;
 use App\Data\DinnerInputData;
+use App\Data\DinnerUpdateData;
 use App\Models\Dinner;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -39,7 +40,7 @@ class DinnerController extends ApiController
         return DinnerData::fromDinner($dinner->load('items.ingredient'));
     }
 
-    public function update(DinnerInputData $data, Request $request, Dinner $dinner, UpdateDinner $action): DinnerData
+    public function update(DinnerUpdateData $data, Request $request, Dinner $dinner, UpdateDinner $action): DinnerData
     {
         $this->ensureBelongsToHousehold($request, $dinner);
 

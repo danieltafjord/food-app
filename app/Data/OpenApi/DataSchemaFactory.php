@@ -16,11 +16,13 @@ use Illuminate\Support\Str;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionParameter;
+use ReflectionUnionType;
 use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Attributes\Validation\Date;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
+use Spatie\LaravelData\Optional;
 
 /**
  * Builds OpenAPI schemas from spatie/laravel-data classes by reflecting their
@@ -51,7 +53,14 @@ class DataSchemaFactory
     private function propertyType(ReflectionParameter $parameter): Type
     {
         $reflectionType = $parameter->getType();
-        $typeName = $reflectionType instanceof ReflectionNamedType ? $reflectionType->getName() : 'mixed';
+        $types = $reflectionType instanceof ReflectionUnionType ? $reflectionType->getTypes() : [$reflectionType];
+        $typeName = 'mixed';
+        foreach ($types as $candidate) {
+            if ($candidate instanceof ReflectionNamedType && ! in_array($candidate->getName(), [Optional::class, 'null'], true)) {
+                $typeName = $candidate->getName();
+                break;
+            }
+        }
 
         $type = match (true) {
             $typeName === 'int' => new IntegerType,

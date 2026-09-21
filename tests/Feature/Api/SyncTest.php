@@ -634,3 +634,62 @@ it('attributes mobile-created resources to the authenticated user and erases the
         ->toThrow(HttpException::class, 'You are no longer a member of this household.');
     expect($models[0]->fresh()->trashed())->toBeTrue();
 });
+
+it('merges concurrent recipe ingredient additions and redirects subsequent edits to the survivor', function () {
+    $ingredient = ingredientRow('Rice');
+    $dinner = dinnerRow('Rice');
+    $first = syncRow(['dinner_id' => $dinner['id'], 'ingredient_id' => $ingredient['id'], 'quantity' => 100, 'unit' => 'g']);
+    $initial = sync(null, ['ingredients' => [$ingredient], 'dinners' => [$dinner], 'dinner_items' => [$first]])->assertSuccessful();
+    $this->travel(1)->seconds();
+    $duplicate = syncRow(['dinner_id' => $dinner['id'], 'ingredient_id' => $ingredient['id'], 'quantity' => 200, 'unit' => ' G ']);
+    $response = sync($initial->json('cursor'), ['dinner_items' => [$duplicate]])->assertSuccessful()
+        ->assertJsonPath('rejected', [])->assertJsonPath('remaps.dinner_items.'.$duplicate['id'], $first['id']);
+    expect(DinnerItem::query()->count())->toBe(1)
+        ->and((float) DinnerItem::firstWhere('uuid', $first['id'])->quantity)->toBe(200.0);
+    $this->assertSoftDeleted('dinner_items', ['uuid' => $duplicate['id']]);
+    $this->travel(1)->seconds();
+    $duplicate['updated_at'] = now()->toISOString();
+    $duplicate['quantity'] = 300;
+    $response = sync($response->json('cursor'), ['dinner_items' => [$duplicate]])->assertSuccessful()
+        ->assertJsonPath('remaps.dinner_items.'.$duplicate['id'], $first['id']);
+    expect(DinnerItem::query()->count())->toBe(1)
+        ->and((float) DinnerItem::firstWhere('uuid', $first['id'])->quantity)->toBe(300.0);
+    $this->travel(1)->seconds();
+    sync($response->json('cursor'), ['dinner_items' => [tombstone($duplicate['id'])]])->assertSuccessful();
+    expect(DinnerItem::query()->count())->toBe(0);
+});
+
+it('preserves different units while reconciling existing duplicate items on first sync', function () {
+    $dinner = Dinner::factory()->for($this->household)->create();
+    $ingredient = Ingredient::factory()->for($this->household)->create();
+    $first = $dinner->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 100, 'unit' => 'g']);
+    $duplicate = $dinner->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 100, 'unit' => 'g']);
+    $cup = $dinner->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 1, 'unit' => 'cup']);
+    sync()->assertSuccessful()->assertJsonPath('remaps.dinner_items.'.$duplicate->uuid, $first->uuid);
+    expect($dinner->items()->count())->toBe(2);
+    $this->assertNotSoftDeleted($cup);
+});
+
+it('round trips generated shopping provenance through sync', function () {
+    $list = syncRow(['name' => 'Week', 'dinner_plan_id' => null]);
+    $item = syncRow(['shopping_list_id' => $list['id'], 'ingredient_id' => null, 'name' => 'Rice', 'quantity' => 100,
+        'unit' => 'g', 'is_checked' => false, 'is_generated' => true]);
+    sync(null, ['shopping_lists' => [$list], 'shopping_list_items' => [$item]])->assertSuccessful()
+        ->assertJsonPath('changes.shopping_list_items.0.is_generated', true);
+    $this->assertDatabaseHas('shopping_list_items', ['uuid' => $item['id'], 'is_generated' => true]);
+});
+
+it('reports rejected alias edits using the incoming identity without changing the survivor', function () {
+    $dinner = Dinner::factory()->for($this->household)->create();
+    $ingredient = Ingredient::factory()->for($this->household)->create();
+    $first = $dinner->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 100, 'unit' => 'g']);
+    $duplicate = $dinner->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 100, 'unit' => 'g']);
+    $initial = sync()->assertSuccessful();
+    $this->travel(1)->seconds();
+    sync($initial->json('cursor'), ['dinner_items' => [syncRow(['id' => $duplicate->uuid, 'dinner_id' => $dinner->uuid,
+        'ingredient_id' => (string) Str::uuid(), 'quantity' => 200, 'unit' => 'g'])]])->assertSuccessful()
+        ->assertJsonPath('rejected.dinner_items.0.id', $duplicate->uuid)
+        ->assertJsonPath('rejected.dinner_items.0.code', 'unknown_parent')
+        ->assertJsonPath('remaps.dinner_items.'.$duplicate->uuid, $first->uuid);
+    expect((float) $first->fresh()->quantity)->toBe(100.0);
+});

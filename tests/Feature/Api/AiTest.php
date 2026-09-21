@@ -137,7 +137,7 @@ it('classifies through OpenRouter with the server key and caches equivalent name
     Http::assertSentCount(1);
     Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer test-server-key')
         && $request['model'] === 'typesafe/jev-1.13'
-        && count($request['questions']['category']['criteria']) === 16
+        && count($request['questions']['category']['criteria']) === 18
         && $request['state'] === ['ingredient' => 'pak choi', 'locale' => 'nb']);
     $this->assertDatabaseHas('ai_daily_usage', ['scope' => 'user:'.$user->id, 'feature' => 'categorization', 'used' => 1]);
     expect($household->ingredients()->count())->toBe(0);
@@ -154,6 +154,18 @@ it('does not return cached data after opt-out', function () {
     $this->postJson('/api/v1/ai/categorize', ['name' => 'Pak choi', 'locale' => 'nb'])->assertForbidden();
     Http::assertSentCount(1);
 });
+
+it('accepts pet and baby categories from the classifier', function (string $name, string $category) {
+    [$user] = ownerWithHousehold();
+    enableAi($user);
+    Http::preventStrayRequests();
+    Http::fake(['https://openrouter.ai/api/v1/systemone' => Http::response(jevAnswer($category))]);
+
+    $this->postJson('/api/v1/ai/categorize', ['name' => $name, 'locale' => 'en'])
+        ->assertOk()->assertJsonPath('data.category', $category);
+
+    Http::assertSent(fn ($request) => isset($request['questions']['category']['criteria'][$category]));
+})->with([['Cat litter', 'pets'], ['Infant formula', 'baby']]);
 
 it('leaves uncertain ingredients uncategorized', function (string $choice, float $confidence) {
     [$user] = ownerWithHousehold();
@@ -345,6 +357,7 @@ it('syncs manual category provenance including an explicit cleared category', fu
 });
 
 it('sends structured suggestions through the SDK with bounded output and a fixed server model', function () {
+    config(['assistance.suggestion_model' => 'google/gemini-3.1-flash-lite']);
     [$user] = ownerWithHousehold();
     enableAi($user);
     Http::preventStrayRequests();

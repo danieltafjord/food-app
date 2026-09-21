@@ -3,6 +3,7 @@
 namespace App\Actions\ShoppingLists;
 
 use App\Models\DinnerPlan;
+use App\Models\DinnerPlanEntry;
 use App\Models\ShoppingList;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -27,11 +28,15 @@ class GenerateShoppingListFromPlan
 
     public function handle(DinnerPlan $plan, User $user): ShoppingList
     {
-        $plan->loadMissing('household', 'entries.dinner.items');
+        $plan->loadMissing('household');
+        // Offline devices can create distinct plans for one week. Match the mobile board.
+        $planIds = $plan->start_date === null ? [$plan->id] : $plan->household->dinnerPlans()
+            ->whereDate('start_date', $plan->start_date->toDateString())->pluck('id')->all();
+        $entries = DinnerPlanEntry::query()->whereIn('dinner_plan_id', $planIds)->with('dinner.items')->get();
 
         $aggregated = [];
 
-        foreach ($plan->entries as $entry) {
+        foreach ($entries as $entry) {
             $dinner = $entry->dinner;
 
             if ($dinner === null) {
@@ -42,7 +47,7 @@ class GenerateShoppingListFromPlan
                 ? $entry->servings / $dinner->default_servings
                 : 1.0;
 
-            foreach ($dinner->items as $item) {
+            foreach ($dinner->items->sortByDesc('updated_at')->unique(fn ($item) => $item->ingredient_id.'|'.(self::normalizeUnit($item->unit) ?? '')) as $item) {
                 $unit = self::normalizeUnit($item->unit);
                 $key = $item->ingredient_id.'|'.($unit ?? '');
                 $scaled = $item->quantity !== null ? (float) $item->quantity * $factor : null;
@@ -74,6 +79,7 @@ class GenerateShoppingListFromPlan
             foreach ($aggregated as $row) {
                 $item = $list->items()->make([
                     'ingredient_id' => $row['ingredient_id'],
+                    'is_generated' => true,
                     'quantity' => $row['quantity'] !== null ? round($row['quantity'], 2) : null,
                     'unit' => $row['unit'],
                 ]);

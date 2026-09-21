@@ -2,7 +2,9 @@
 
 namespace App\Actions\Dinners;
 
+use App\Actions\ShoppingLists\GenerateShoppingListFromPlan;
 use App\Data\DinnerInputData;
+use App\Data\DinnerUpdateData;
 use App\Models\Dinner;
 use App\Models\DinnerItem;
 use App\Models\Household;
@@ -14,7 +16,7 @@ trait ManagesDinnerItems
     /**
      * Ensure every referenced ingredient belongs to the household.
      */
-    protected function assertIngredientsBelongToHousehold(Household $household, DinnerInputData $data): void
+    protected function assertIngredientsBelongToHousehold(Household $household, DinnerInputData|DinnerUpdateData $data): void
     {
         $ingredientIds = (new Collection($data->items))->pluck('ingredientId')->unique();
 
@@ -32,26 +34,27 @@ trait ManagesDinnerItems
     }
 
     /**
-     * Reconcile the dinner's items with the supplied set, keyed by ingredient.
+     * Reconcile the dinner's items with the supplied set, keyed by ingredient and unit.
      *
      * Existing rows keep their identity (and uuid) when their ingredient is
      * still present, so synced devices see an edit rather than a delete plus a
      * re-create; rows whose ingredient is gone are tombstoned. A duplicated
-     * ingredient in the payload keeps its first occurrence.
+     * ingredient/unit in the payload keeps its first occurrence.
      */
-    protected function syncItems(Dinner $dinner, DinnerInputData $data): void
+    protected function syncItems(Dinner $dinner, DinnerInputData|DinnerUpdateData $data): void
     {
         /** @var Collection<int, DinnerItem> $existing */
-        $existing = $dinner->items()->get()->keyBy('ingredient_id');
+        $existing = $dinner->items()->get()->keyBy(fn (DinnerItem $item) => $item->ingredient_id.'|'.(GenerateShoppingListFromPlan::normalizeUnit($item->unit) ?? ''));
         $seen = [];
 
         foreach ($data->items as $item) {
-            if (isset($seen[$item->ingredientId])) {
+            $key = $item->ingredientId.'|'.(GenerateShoppingListFromPlan::normalizeUnit($item->unit) ?? '');
+            if (isset($seen[$key])) {
                 continue;
             }
-            $seen[$item->ingredientId] = true;
+            $seen[$key] = true;
 
-            $current = $existing->get($item->ingredientId);
+            $current = $existing->get($key);
             if ($current !== null) {
                 $current->update(['quantity' => $item->quantity, 'unit' => $item->unit]);
             } else {

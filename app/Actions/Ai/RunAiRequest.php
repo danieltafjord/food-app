@@ -32,7 +32,8 @@ class RunAiRequest
         }
         // Include scope, model and prompt revision so caches cannot cross households or model changes.
         $model = config($feature === 'categorization' ? 'assistance.classification_model' : 'assistance.suggestion_model');
-        $key = 'assistance:v1:'.$household->id.':'.$feature.':'.hash('sha256', json_encode([$model, config('assistance.classification_confidence'), $context], JSON_THROW_ON_ERROR));
+        $revision = $feature === 'categorization' ? 'v2' : 'v1';
+        $key = 'assistance:'.$revision.':'.$household->id.':'.$feature.':'.hash('sha256', json_encode([$model, config('assistance.classification_confidence'), $context], JSON_THROW_ON_ERROR));
         if (is_array($cached = Cache::get($key))) {
             return $cached;
         }

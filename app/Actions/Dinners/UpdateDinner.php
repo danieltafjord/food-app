@@ -3,25 +3,32 @@
 namespace App\Actions\Dinners;
 
 use App\Data\DinnerInputData;
+use App\Data\DinnerUpdateData;
 use App\Models\Dinner;
 use Illuminate\Support\Facades\DB;
+use Spatie\LaravelData\Optional;
 
 class UpdateDinner
 {
     use ManagesDinnerItems;
 
-    public function handle(Dinner $dinner, DinnerInputData $data): Dinner
+    public function handle(Dinner $dinner, DinnerInputData|DinnerUpdateData $data): Dinner
     {
-        $this->assertIngredientsBelongToHousehold($dinner->household, $data);
+        if (! $data->items instanceof Optional) {
+            $this->assertIngredientsBelongToHousehold($dinner->household, $data);
+        }
 
         return DB::transaction(function () use ($dinner, $data): Dinner {
-            $dinner->update([
+            $attributes = array_filter([
                 'name' => $data->name,
                 'default_servings' => $data->defaultServings,
                 'notes' => $data->notes,
-            ]);
+            ], fn ($value) => ! $value instanceof Optional);
+            $dinner->update($attributes);
 
-            $this->syncItems($dinner, $data);
+            if (! $data->items instanceof Optional) {
+                $this->syncItems($dinner, $data);
+            }
 
             return $dinner->load('items.ingredient');
         });

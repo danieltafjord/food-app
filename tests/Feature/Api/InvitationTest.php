@@ -149,3 +149,14 @@ it('rechecks invitation status after acquiring the write lock', function (string
 
     expect($this->household->hasMember($invitee))->toBeFalse();
 })->with(['accept', 'decline']);
+
+it('makes the joined household active even when the invitee already has a household', function () {
+    [$invitee, $previous] = ownerWithHousehold();
+    $invitation = HouseholdInvitation::factory()->for($this->household)->create(['email' => $invitee->email]);
+    Passport::actingAs($invitee);
+    $this->postJson("/api/v1/invitations/{$invitation->token}/accept")->assertSuccessful()
+        ->assertJsonPath('data.id', $this->household->id);
+    expect($invitee->fresh()->current_household_id)->toBe($this->household->id)
+        ->and($previous->hasMember($invitee))->toBeTrue();
+    $this->getJson('/api/v1/me')->assertSuccessful()->assertJsonPath('data.current_household.id', $this->household->id);
+});

@@ -15,6 +15,7 @@ class ShoppingListItemData extends Data
         public ?string $quantity,
         public ?string $unit,
         public bool $isChecked,
+        public bool $isGenerated = false,
     ) {}
 
     public static function fromItem(ShoppingListItem $item): self
@@ -27,6 +28,7 @@ class ShoppingListItemData extends Data
             quantity: $item->quantity,
             unit: $item->unit,
             isChecked: $item->is_checked,
+            isGenerated: $item->is_generated,
         );
     }
 }

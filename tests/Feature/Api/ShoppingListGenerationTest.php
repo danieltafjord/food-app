@@ -66,3 +66,19 @@ it('forbids generating from another household plan', function () {
 
     $this->postJson("/api/v1/dinner-plans/{$foreign->id}/shopping-list")->assertNotFound();
 });
+
+it('includes both concurrent weekly plans without including other weeks or households', function () {
+    $ingredient = Ingredient::factory()->for($this->household)->create();
+    $dinner = Dinner::factory()->for($this->household)->create(['default_servings' => 1]);
+    $dinner->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 100, 'unit' => 'g']);
+    $first = DinnerPlan::factory()->for($this->household)->create(['start_date' => '2026-06-01']);
+    $second = DinnerPlan::factory()->for($this->household)->create(['start_date' => '2026-06-01']);
+    $other = DinnerPlan::factory()->for($this->household)->create(['start_date' => '2026-06-08']);
+    $foreign = DinnerPlan::factory()->create(['start_date' => '2026-06-01']);
+    foreach ([$first, $second, $other, $foreign] as $plan) {
+        $plan->entries()->create(['dinner_id' => $dinner->id, 'scheduled_date' => $plan->start_date, 'servings' => 1, 'meal_type' => 'dinner']);
+    }
+    $this->postJson("/api/v1/dinner-plans/{$first->id}/shopping-list")->assertSuccessful()
+        ->assertJsonCount(1, 'data.items')->assertJsonPath('data.items.0.quantity', '200.00')
+        ->assertJsonPath('data.items.0.is_generated', true);
+});

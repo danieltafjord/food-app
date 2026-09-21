@@ -2,6 +2,7 @@
 
 namespace App\Actions\Sync;
 
+use App\Actions\Dinners\MergeDuplicateDinnerItems;
 use App\Enums\MealType;
 use App\Models\Concerns\Syncable;
 use App\Models\Dinner;
@@ -65,7 +66,7 @@ class ApplySyncBatch
     /** Hard cap on rows per batch; the client chunks larger pushes. */
     public const MAX_ROWS = 1000;
 
-    public function __construct(private AllocateSyncVersion $allocateVersion) {}
+    public function __construct(private AllocateSyncVersion $allocateVersion, private MergeDuplicateDinnerItems $mergeDinnerItems) {}
 
     /**
      * Resource definitions in dependency order. Each child's `fks` map a
@@ -202,7 +203,7 @@ class ApplySyncBatch
             ],
             'shopping_list_items' => [
                 'model' => ShoppingListItem::class,
-                'fields' => ['name', 'quantity', 'unit', 'is_checked'],
+                'fields' => ['name', 'quantity', 'unit', 'is_checked', 'is_generated'],
                 'fks' => ['shopping_list_id' => 'shopping_lists', 'ingredient_id' => 'ingredients'],
                 'nullableFks' => ['ingredient_id'],
                 'hasHousehold' => false,
@@ -213,6 +214,7 @@ class ApplySyncBatch
                     'quantity' => $m->quantity !== null ? (float) $m->quantity : null,
                     'unit' => $m->unit,
                     'is_checked' => (bool) $m->is_checked,
+                    'is_generated' => (bool) $m->is_generated,
                 ],
                 'rules' => [
                     'shopping_list_id' => ['required', 'uuid'],
@@ -221,6 +223,7 @@ class ApplySyncBatch
                     'quantity' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
                     'unit' => ['nullable', 'string', 'max:50'],
                     'is_checked' => ['nullable', 'boolean'],
+                    'is_generated' => ['sometimes', 'boolean'],
                 ],
             ],
         ];
@@ -267,8 +270,8 @@ class ApplySyncBatch
             $now = CarbonImmutable::now();
             // A write batch locks the household for the rest of the transaction
             // so peers' write batches wait; a pull just reads the committed version.
-            $committed = $this->committedVersion($household, lock: $incoming !== []);
-            if ($incoming !== [] && ! $household->hasMember($user)) {
+            $committed = $this->committedVersion($household, lock: $incoming !== [] || $cursor === null);
+            if (($incoming !== [] || $cursor === null) && ! $household->hasMember($user)) {
                 abort(409, 'You are no longer a member of this household.');
             }
             $state = $this->newState($household, $resources);
@@ -278,6 +281,10 @@ class ApplySyncBatch
                 foreach ($rows as $row) {
                     $this->applyRow($household, $key, $resources[$key], $row, $state, $existing, $now, $user->id, $cursor);
                 }
+            }
+
+            if (isset($incoming['dinner_items']) || $cursor === null) {
+                $this->mergeDinnerItems->handle($household, $state);
             }
 
             $outgoing = [];
@@ -412,6 +419,17 @@ class ApplySyncBatch
             return;
         }
 
+        $originalUuid = $uuid;
+        while ($key === 'dinner_items' && $model?->merged_into_uuid) {
+            $canonical = DinnerItem::withTrashed()->where('uuid', $model->merged_into_uuid)->firstOrFail();
+            $state->remaps[$key][$uuid] = $canonical->uuid;
+            $state->include($key, $uuid);
+            $uuid = $canonical->uuid;
+            $row['id'] = $uuid;
+            $model = $canonical;
+            $state->include($key, $uuid);
+        }
+
         if ($model !== null && $model->erasure_version > 0 && ($model->trashed() || ($cursor ?? 0) < $model->erasure_version || ($row['erasure_version'] ?? 0) < $model->erasure_version)) {
             $state->remember($key, $uuid, $model->getKey());
             $state->include($key, $uuid);
@@ -462,7 +480,7 @@ class ApplySyncBatch
 
         $foreignKeys = $this->resolveForeignKeys($resource, $row, $state);
         if (is_string($foreignKeys)) {
-            $state->reject($key, $uuid, 'unknown_parent', $foreignKeys);
+            $state->reject($key, $originalUuid, 'unknown_parent', $foreignKeys);
 
             return;
         }

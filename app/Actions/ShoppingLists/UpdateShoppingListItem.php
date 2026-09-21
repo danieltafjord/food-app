@@ -13,7 +13,7 @@ class UpdateShoppingListItem
     {
         $this->assertItemIsValid($item->shoppingList->household, $data);
 
-        $item->update($this->itemAttributes($data));
+        $item->update($this->itemAttributes($data) + ['is_generated' => false]);
 
         return $item->load('ingredient');
     }

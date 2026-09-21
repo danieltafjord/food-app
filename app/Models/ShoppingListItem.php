@@ -22,11 +22,13 @@ class ShoppingListItem extends Model
         'quantity',
         'unit',
         'is_checked',
+        'is_generated',
     ];
 
     /** @var array<string, mixed> */
     protected $attributes = [
         'is_checked' => false,
+        'is_generated' => false,
     ];
 
     /**
@@ -37,6 +39,7 @@ class ShoppingListItem extends Model
         return [
             'quantity' => 'decimal:2',
             'is_checked' => 'boolean',
+            'is_generated' => 'boolean',
         ];
     }
 

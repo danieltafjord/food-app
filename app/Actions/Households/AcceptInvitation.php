@@ -33,9 +33,7 @@ class AcceptInvitation
 
             $invitation->update(['accepted_at' => now()]);
 
-            if (is_null($user->current_household_id)) {
-                $user->update(['current_household_id' => $household->id]);
-            }
+            $user->update(['current_household_id' => $household->id]);
 
             return $household;
         });
