@@ -200,3 +200,70 @@ describe('members', function () {
         $this->deleteJson("/api/v1/household/members/{$owner->id}")->assertConflict();
     });
 });
+
+it('sets up the first household once and preserves its settings on retry', function () {
+    $user = User::factory()->create();
+    Passport::actingAs($user);
+
+    $id = $this->postJson('/api/v1/household/setup', ['name' => 'My Kitchen', 'default_servings' => 4])
+        ->assertSuccessful()
+        ->assertJsonPath('data.name', 'My Kitchen')
+        ->assertJsonPath('data.default_servings', 4)
+        ->json('data.id');
+
+    $this->postJson('/api/v1/household/setup', ['name' => 'Retry', 'default_servings' => 2])
+        ->assertSuccessful()
+        ->assertJsonPath('data.id', $id)
+        ->assertJsonPath('data.name', 'My Kitchen')
+        ->assertJsonPath('data.default_servings', 4);
+
+    expect($user->fresh()->current_household_id)->toBe($id)
+        ->and($user->households()->count())->toBe(1)
+        ->and(Household::findOrFail($id)->isOwnedBy($user))->toBeTrue();
+    $this->assertDatabaseCount('households', 1);
+});
+
+it('keeps the active household when setting up another device', function () {
+    [$user, $household] = ownerWithHousehold();
+    Passport::actingAs($user);
+
+    $this->postJson('/api/v1/household/setup', ['name' => 'My Kitchen'])
+        ->assertSuccessful()
+        ->assertJsonPath('data.id', $household->id);
+    $this->assertDatabaseCount('households', 1);
+});
+
+it('restores an existing membership instead of creating an extra household', function () {
+    [$user, $household] = ownerWithHousehold();
+    $user->update(['current_household_id' => null]);
+    Passport::actingAs($user);
+
+    $this->postJson('/api/v1/household/setup', ['name' => 'My Kitchen'])
+        ->assertSuccessful()
+        ->assertJsonPath('data.id', $household->id);
+
+    expect($user->fresh()->current_household_id)->toBe($household->id);
+    $this->assertDatabaseCount('households', 1);
+});
+
+it('never reuses an active household the user does not belong to', function () {
+    [$user, $own] = ownerWithHousehold();
+    $other = Household::factory()->create();
+    $user->update(['current_household_id' => $other->id]);
+    Passport::actingAs($user);
+
+    $this->postJson('/api/v1/household/setup', ['name' => 'My Kitchen'])
+        ->assertSuccessful()
+        ->assertJsonPath('data.id', $own->id);
+
+    expect($user->fresh()->current_household_id)->toBe($own->id);
+    $this->assertDatabaseCount('households', 2);
+});
+
+it('requires authentication and valid settings for household setup', function () {
+    $this->postJson('/api/v1/household/setup', ['name' => 'My Kitchen'])->assertUnauthorized();
+    Passport::actingAs(User::factory()->create());
+    $this->postJson('/api/v1/household/setup', ['name' => '', 'default_servings' => 0])
+        ->assertJsonValidationErrors(['name', 'default_servings']);
+    $this->assertDatabaseCount('households', 0);
+});

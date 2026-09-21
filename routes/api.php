@@ -36,6 +36,7 @@ Route::prefix('v1')
         Route::patch('households/{household}', [HouseholdController::class, 'update'])->name('households.update');
         Route::delete('households/{household}', [HouseholdController::class, 'destroy'])->name('households.destroy');
         Route::post('household/switch', SwitchHouseholdController::class)->name('household.switch');
+        Route::post('household/setup', [HouseholdController::class, 'setup'])->name('household.setup');
 
         // Invitations addressed to the authenticated user (bound by token)
         Route::post('invitations/{invitation:token}/accept', [InvitationAcceptanceController::class, 'accept'])->name('invitations.accept');

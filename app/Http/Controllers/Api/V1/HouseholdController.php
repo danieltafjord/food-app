@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Households\CreateHousehold;
 use App\Actions\Households\DeleteHousehold;
+use App\Actions\Households\EnsureHousehold;
 use App\Actions\Households\UpdateHousehold;
 use App\Data\HouseholdData;
 use App\Data\HouseholdInputData;
@@ -28,6 +29,11 @@ class HouseholdController extends Controller
     }
 
     public function store(HouseholdInputData $data, Request $request, CreateHousehold $action): HouseholdData
+    {
+        return HouseholdData::from($action->handle($request->user(), $data));
+    }
+
+    public function setup(HouseholdInputData $data, Request $request, EnsureHousehold $action): HouseholdData
     {
         return HouseholdData::from($action->handle($request->user(), $data));
     }
