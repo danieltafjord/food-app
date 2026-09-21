@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\HouseholdRole;
+use App\Models\Concerns\TracksContentAuthors;
 use Database\Factories\HouseholdFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Household extends Model
 {
     /** @use HasFactory<HouseholdFactory> */
-    use HasFactory;
+    use HasFactory, TracksContentAuthors;
 
     /** @var list<string> */
     protected $fillable = ['name', 'default_servings'];
@@ -26,6 +27,7 @@ class Household extends Model
     protected $attributes = [
         'default_servings' => 2,
         'sync_version' => 0,
+        'erasure_version' => 0,
     ];
 
     /**
@@ -99,5 +101,11 @@ class Household extends Model
         return $this->members()
             ->wherePivot('role', HouseholdRole::Owner->value)
             ->count();
+    }
+
+    /** @return array<string, mixed> */
+    public function contentErasureDefaults(): array
+    {
+        return ['name' => 'Household', 'default_servings' => 2];
     }
 }

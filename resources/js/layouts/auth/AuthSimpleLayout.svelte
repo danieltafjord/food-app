@@ -2,7 +2,7 @@
     import { Link } from '@inertiajs/svelte';
     import type { Snippet } from 'svelte';
     import AppLogoIcon from '@/components/AppLogoIcon.svelte';
-    import { home } from '@/routes';
+    import { home, privacy, support } from '@/routes';
 
     let {
         title = '',
@@ -42,6 +42,21 @@
                 </div>
             </div>
             {@render children?.()}
+            <nav
+                aria-label="Help and privacy"
+                class="flex justify-center gap-5 text-sm text-muted-foreground"
+            >
+                <Link
+                    href={privacy()}
+                    class="inline-flex min-h-11 items-center underline underline-offset-4"
+                    >Privacy policy</Link
+                >
+                <Link
+                    href={support()}
+                    class="inline-flex min-h-11 items-center underline underline-offset-4"
+                    >Support</Link
+                >
+            </nav>
         </div>
     </div>
 </div>

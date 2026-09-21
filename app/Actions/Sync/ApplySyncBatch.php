@@ -12,12 +12,14 @@ use App\Models\Household;
 use App\Models\Ingredient;
 use App\Models\ShoppingList;
 use App\Models\ShoppingListItem;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -232,7 +234,7 @@ class ApplySyncBatch
      *     remaps: array<string, array<string, string>>,
      * }
      */
-    public function handle(Household $household, ?int $cursor, array $changes): array
+    public function handle(Household $household, User $user, ?int $cursor, array $changes): array
     {
         $resources = $this->resources();
         $this->assertBatchSize($changes);
@@ -259,17 +261,20 @@ class ApplySyncBatch
             ];
         }
 
-        return DB::transaction(function () use ($household, $cursor, $incoming, $resources): array {
+        return DB::transaction(function () use ($household, $user, $cursor, $incoming, $resources): array {
             $now = CarbonImmutable::now();
             // A write batch locks the household for the rest of the transaction
             // so peers' write batches wait; a pull just reads the committed version.
             $committed = $this->committedVersion($household, lock: $incoming !== []);
+            if ($incoming !== [] && ! $household->hasMember($user)) {
+                abort(409, 'You are no longer a member of this household.');
+            }
             $state = $this->newState($household, $resources);
 
             foreach ($incoming as $key => $rows) {
                 $existing = $this->prefetch($resources[$key], $rows);
                 foreach ($rows as $row) {
-                    $this->applyRow($household, $key, $resources[$key], $row, $state, $existing, $now);
+                    $this->applyRow($household, $key, $resources[$key], $row, $state, $existing, $now, $user->id, $cursor);
                 }
             }
 
@@ -299,18 +304,22 @@ class ApplySyncBatch
     }
 
     /**
-     * @param  array<string, array{model: class-string<Model>}>  $resources
+     * @param  array<string, array{model: class-string<Model>, query: callable(Household, bool): Builder}>  $resources
      */
     private function newState(Household $household, array $resources): SyncBatchState
     {
         return new SyncBatchState(
-            loadMap: fn (string $key): array => $resources[$key]['model']::withTrashed()
-                ->where('household_id', $household->id)
+            loadMap: fn (string $key): array => $resources[$key]['query']($household, false)
+                ->withTrashed()
                 ->pluck('id', 'uuid')
                 ->all(),
-            loadUuids: fn (string $key, array $ids): array => $resources[$key]['model']::withTrashed()
+            loadUuids: fn (string $key, array $ids): array => $resources[$key]['query']($household, false)
+                ->withTrashed()
                 ->whereKey($ids)
                 ->pluck('uuid', 'id')
+                ->all(),
+            loadLiveIds: fn (string $key): array => $resources[$key]['query']($household, true)
+                ->pluck('id')
                 ->all(),
             loadIngredientNames: function () use ($household): array {
                 $byName = [];
@@ -336,7 +345,7 @@ class ApplySyncBatch
     {
         $uuids = [];
         foreach ($rows as $row) {
-            if (is_array($row) && is_string($row['id'] ?? null)) {
+            if (is_array($row) && Str::isUuid($row['id'] ?? null)) {
                 $uuids[$row['id']] = true;
             }
         }
@@ -368,7 +377,7 @@ class ApplySyncBatch
      * @param  array<string, mixed>  $row
      * @param  array<string, Model&Syncable>  $existing  prefetched rows by uuid; rows written here are added
      */
-    private function applyRow(Household $household, string $key, array $resource, array $row, SyncBatchState $state, array &$existing, CarbonImmutable $now): void
+    private function applyRow(Household $household, string $key, array $resource, array $row, SyncBatchState $state, array &$existing, CarbonImmutable $now, int $userId, ?int $cursor): void
     {
         $uuid = $row['id'] ?? null;
         $isTombstone = ! empty($row['deleted_at']);
@@ -401,6 +410,13 @@ class ApplySyncBatch
             return;
         }
 
+        if ($model !== null && $model->erasure_version > 0 && ($model->trashed() || ($cursor ?? 0) < $model->erasure_version || ($row['erasure_version'] ?? 0) < $model->erasure_version)) {
+            $state->remember($key, $uuid, $model->getKey());
+            $state->include($key, $uuid);
+
+            return;
+        }
+
         if ($isTombstone) {
             if ($model === null) {
                 return; // Deleted before it ever reached the server.
@@ -412,6 +428,7 @@ class ApplySyncBatch
                 return;
             }
             $model->tombstone($incomingDeletedAt, $state->version());
+            $state->markDeleted($key, $model->getKey());
             if ($key === 'ingredients') {
                 $state->forgetIngredientName($model->name);
             }
@@ -437,6 +454,7 @@ class ApplySyncBatch
         } else {
             $model = new $resource['model'];
             $model->setAttribute('uuid', $uuid);
+            $model->setAttribute('created_by_user_id', $userId);
         }
         $previousName = $key === 'ingredients' && $model->exists ? $model->getOriginal('name') : null;
 
@@ -460,11 +478,12 @@ class ApplySyncBatch
         $attributes['updated_at'] = $incomingUpdatedAt;
         $attributes['deleted_at'] = null; // A newer live version restores a tombstone.
 
-        $model->forceFill($attributes)->stampSync($state->version(), $now);
+        $model->forceFill($attributes)->attributeContentTo($userId)->stampSync($state->version(), $now);
         Model::withoutTimestamps(fn () => $model->save());
 
         $existing[$uuid] = $model;
         $state->remember($key, $uuid, $model->getKey());
+        $state->markLive($key, $model->getKey());
         if ($key === 'ingredients') {
             if ($previousName !== null && SyncBatchState::nameKey($previousName) !== SyncBatchState::nameKey($model->name)) {
                 $state->forgetIngredientName($previousName);
@@ -480,6 +499,7 @@ class ApplySyncBatch
     {
         return [
             'id' => ['required', 'uuid'],
+            'erasure_version' => ['sometimes', 'integer', 'min:0'],
             'created_at' => ['nullable', 'date'],
             'updated_at' => ['nullable', 'date'],
             'deleted_at' => ['nullable', 'date'],
@@ -546,7 +566,7 @@ class ApplySyncBatch
                 return "Missing {$column}.";
             }
 
-            $parentId = is_string($parentUuid) ? $state->id($parentKey, $parentUuid) : null;
+            $parentId = is_string($parentUuid) ? $state->liveId($parentKey, $parentUuid) : null;
             if ($parentId === null) {
                 return "Unknown {$column} {$parentUuid}.";
             }
@@ -618,6 +638,7 @@ class ApplySyncBatch
             'created_at' => $model->created_at?->toISOString(),
             'updated_at' => $model->updated_at?->toISOString(),
             'deleted_at' => $model->getAttribute('deleted_at')?->toISOString(),
+            'erasure_version' => (int) $model->getAttribute('erasure_version'),
         ]);
     }
 }

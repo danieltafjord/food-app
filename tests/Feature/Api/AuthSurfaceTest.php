@@ -3,6 +3,8 @@
 use App\Models\Household;
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Str;
+use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 
 it('rejects unauthenticated access', function () {
@@ -63,14 +65,51 @@ describe('token management', function () {
 
     it('revokes a specific device without affecting others', function () {
         $user = User::factory()->create();
-        $keep = $user->createToken('Keep')->accessToken;
+        $keepToken = $user->createToken('Keep');
+        $keep = $keepToken->accessToken;
         $remove = $user->createToken('Remove');
+        $keepRefresh = $keepToken->token->refreshToken()->create(['id' => Str::random(80), 'revoked' => false]);
+        $removeRefresh = $remove->token->refreshToken()->create(['id' => Str::random(80), 'revoked' => false]);
 
         $this->withToken($keep)
             ->deleteJson("/api/v1/auth/devices/{$remove->token->id}")
             ->assertSuccessful();
 
         expect($user->tokens()->whereKey($remove->token->id)->first()->revoked)->toBeTrue();
+        expect($removeRefresh->fresh()->revoked)->toBeTrue()
+            ->and($keepRefresh->fresh()->revoked)->toBeFalse();
         $this->withToken($keep)->getJson('/api/v1/me')->assertSuccessful();
     });
 });
+
+it('refuses refreshing an OAuth session after logout or device revocation', function (string $operation) {
+    $user = User::factory()->create();
+    $client = app(ClientRepository::class)->createAuthorizationCodeGrantClient(
+        name: 'Mobile', redirectUris: ['foodapp://oauth/callback'], confidential: false,
+    );
+    $verifier = str_repeat('a', 64);
+    $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
+    $authorization = $this->actingAs($user)->get('/oauth/authorize?'.http_build_query([
+        'response_type' => 'code', 'client_id' => $client->id,
+        'redirect_uri' => 'foodapp://oauth/callback', 'code_challenge' => $challenge,
+        'code_challenge_method' => 'S256', 'state' => 'logout-test',
+    ]))->assertRedirect();
+    parse_str(parse_url($authorization->headers->get('Location'), PHP_URL_QUERY), $query);
+    $credentials = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code', 'client_id' => $client->id,
+        'redirect_uri' => 'foodapp://oauth/callback', 'code' => $query['code'],
+        'code_verifier' => $verifier,
+    ])->assertSuccessful()->json();
+    $token = $user->tokens()->firstOrFail();
+
+    if ($operation === 'logout') {
+        $this->withToken($credentials['access_token'])->postJson('/api/v1/auth/logout')->assertSuccessful();
+    } else {
+        $this->withToken($credentials['access_token'])->deleteJson("/api/v1/auth/devices/{$token->id}")->assertSuccessful();
+    }
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token', 'client_id' => $client->id,
+        'refresh_token' => $credentials['refresh_token'],
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+})->with(['logout', 'device']);

@@ -97,6 +97,8 @@ trait Syncable
 
     public function initializeSyncable(): void
     {
+        $this->attributes['erasure_version'] ??= 0;
+        $this->setDateFormat('Y-m-d H:i:s.u');
         $this->mergeFillable(['uuid']);
         $this->mergeCasts([
             'sync_version' => 'integer',
@@ -153,10 +155,10 @@ trait Syncable
     protected function tombstoneStamp(CarbonInterface $deletedAt, int $version): array
     {
         return [
-            'deleted_at' => $deletedAt,
-            'updated_at' => $deletedAt,
+            'deleted_at' => $this->fromDateTime($deletedAt),
+            'updated_at' => $this->fromDateTime($deletedAt),
             'sync_version' => $version,
-            'synced_at' => now(),
+            'synced_at' => $this->fromDateTime(now()),
         ];
     }
 }

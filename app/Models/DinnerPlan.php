@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Syncable;
+use App\Models\Concerns\TracksContentAuthors;
 use Carbon\CarbonInterface;
 use Database\Factories\DinnerPlanFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class DinnerPlan extends Model
 {
     /** @use HasFactory<DinnerPlanFactory> */
-    use HasFactory, Syncable;
+    use HasFactory, Syncable, TracksContentAuthors;
 
     /** @var list<string> */
     protected $fillable = [
@@ -67,5 +68,16 @@ class DinnerPlan extends Model
     protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
     {
         $this->entries()->update($this->tombstoneStamp($deletedAt, $version));
+        $this->shoppingLists()->update([
+            'dinner_plan_id' => null,
+            'sync_version' => $version,
+            'synced_at' => $this->fromDateTime(now()),
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    public function contentErasureDefaults(): array
+    {
+        return ['name' => 'Meal plan', 'start_date' => null, 'end_date' => null];
     }
 }

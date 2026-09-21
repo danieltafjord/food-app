@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Syncable;
+use App\Models\Concerns\TracksContentAuthors;
 use Carbon\CarbonInterface;
 use Database\Factories\ShoppingListFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ShoppingList extends Model
 {
     /** @use HasFactory<ShoppingListFactory> */
-    use HasFactory, Syncable;
+    use HasFactory, Syncable, TracksContentAuthors;
 
     /** @var list<string> */
     protected $fillable = [
@@ -55,5 +56,11 @@ class ShoppingList extends Model
     protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
     {
         $this->items()->update($this->tombstoneStamp($deletedAt, $version));
+    }
+
+    /** @return array<string, mixed> */
+    public function contentErasureDefaults(): array
+    {
+        return ['name' => 'Shopping list'];
     }
 }

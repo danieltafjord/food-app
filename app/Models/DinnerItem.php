@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Syncable;
+use App\Models\Concerns\TracksContentAuthors;
 use Database\Factories\DinnerItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class DinnerItem extends Model
 {
     /** @use HasFactory<DinnerItemFactory> */
-    use HasFactory, Syncable;
+    use HasFactory, Syncable, TracksContentAuthors;
 
     /** @var list<string> */
     protected $fillable = [
@@ -50,5 +51,11 @@ class DinnerItem extends Model
         }
 
         return (int) Dinner::withTrashed()->whereKey($this->dinner_id)->value('household_id');
+    }
+
+    /** @return array<string, mixed> */
+    public function contentErasureDefaults(): array
+    {
+        return ['quantity' => null, 'unit' => null];
     }
 }

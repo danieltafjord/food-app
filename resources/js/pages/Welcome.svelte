@@ -2,7 +2,7 @@
     import { Link, page } from '@inertiajs/svelte';
     import AppHead from '@/components/AppHead.svelte';
     import { toUrl } from '@/lib/utils';
-    import { dashboard, login } from '@/routes';
+    import { dashboard, login, privacy, support } from '@/routes';
     import { register } from '@/routes';
 
     const auth = $derived(page.props.auth);
@@ -438,5 +438,16 @@
             </div>
         </main>
     </div>
-    <div class="hidden h-14.5 lg:block"></div>
+    <footer class="mt-6 flex gap-6 text-sm dark:text-[#EDEDEC]">
+        <Link
+            href={privacy()}
+            class="inline-flex min-h-11 items-center underline underline-offset-4"
+            >Privacy policy</Link
+        >
+        <Link
+            href={support()}
+            class="inline-flex min-h-11 items-center underline underline-offset-4"
+            >Support</Link
+        >
+    </footer>
 </div>

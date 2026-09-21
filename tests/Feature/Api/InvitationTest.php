@@ -1,12 +1,16 @@
 <?php
 
+use App\Actions\Households\AcceptInvitation;
+use App\Actions\Households\DeclineInvitation;
 use App\Enums\HouseholdRole;
 use App\Models\Household;
 use App\Models\HouseholdInvitation;
 use App\Models\User;
 use App\Notifications\HouseholdInvitationNotification;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Passport\Passport;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 beforeEach(function () {
     Notification::fake();
@@ -77,6 +81,21 @@ it('forbids accepting an invitation addressed to a different email', function ()
     $this->postJson("/api/v1/invitations/{$invitation->token}/accept")->assertForbidden();
 });
 
+it('requires a verified email before responding to an invitation', function (string $response) {
+    $invitee = User::factory()->unverified()->create(['email' => 'partner@example.com']);
+    $invitation = HouseholdInvitation::factory()->for($this->household)->create([
+        'email' => $invitee->email,
+    ]);
+
+    Passport::actingAs($invitee);
+    $this->postJson("/api/v1/invitations/{$invitation->token}/{$response}")
+        ->assertForbidden()
+        ->assertJsonPath('message', 'Verify your email address before responding to household invitations.');
+
+    expect($this->household->hasMember($invitee))->toBeFalse()
+        ->and($invitation->fresh()->isPending())->toBeTrue();
+})->with(['accept', 'decline']);
+
 it('rejects accepting an expired invitation', function () {
     $invitee = User::factory()->create(['email' => 'partner@example.com']);
     $invitation = HouseholdInvitation::factory()->for($this->household)->expired()->create([
@@ -105,3 +124,28 @@ it('lets an owner revoke a pending invitation', function () {
 
     $this->assertModelMissing($invitation);
 });
+
+it('does not accept an invitation revoked after route binding', function () {
+    $invitee = User::factory()->create();
+    $invitation = HouseholdInvitation::factory()->for($this->household)->create(['email' => $invitee->email]);
+    HouseholdInvitation::whereKey($invitation->id)->delete();
+
+    expect(fn () => app(AcceptInvitation::class)->handle($invitation, $invitee))
+        ->toThrow(ModelNotFoundException::class);
+    expect($this->household->hasMember($invitee))->toBeFalse();
+});
+
+it('rechecks invitation status after acquiring the write lock', function (string $response) {
+    $invitee = User::factory()->create();
+    $invitation = HouseholdInvitation::factory()->for($this->household)->create(['email' => $invitee->email]);
+    HouseholdInvitation::whereKey($invitation->id)->update([
+        $response === 'accept' ? 'declined_at' : 'accepted_at' => now(),
+    ]);
+
+    expect(fn () => $response === 'accept'
+        ? app(AcceptInvitation::class)->handle($invitation, $invitee)
+        : app(DeclineInvitation::class)->handle($invitation))
+        ->toThrow(HttpException::class, 'This invitation is no longer valid.');
+
+    expect($this->household->hasMember($invitee))->toBeFalse();
+})->with(['accept', 'decline']);

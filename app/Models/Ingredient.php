@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Syncable;
+use App\Models\Concerns\TracksContentAuthors;
 use Carbon\CarbonInterface;
 use Database\Factories\IngredientFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Ingredient extends Model
 {
     /** @use HasFactory<IngredientFactory> */
-    use HasFactory, Syncable;
+    use HasFactory, Syncable, TracksContentAuthors;
 
     /** @var list<string> */
     protected $fillable = [
@@ -54,13 +55,19 @@ class Ingredient extends Model
     {
         $this->dinnerItems()->update($this->tombstoneStamp($deletedAt, $version));
 
-        // Lines without their own text inherit the ingredient's name, then every
-        // line is detached — two bulk statements instead of a save per line.
-        $this->shoppingListItems()->whereNull('name')->update(['name' => $this->name]);
-        $this->shoppingListItems()->update([
-            'ingredient_id' => null,
-            'sync_version' => $version,
-            'synced_at' => now(),
-        ]);
+        $this->shoppingListItems()->eachById(function (ShoppingListItem $item) use ($version): void {
+            if ($item->name === null) {
+                $item->name = $this->name;
+                $item->inheritContentAuthors($this, ['name' => 'name']);
+            }
+            $item->ingredient_id = null;
+            $item->stampSync($version)->save();
+        });
+    }
+
+    /** @return array<string, mixed> */
+    public function contentErasureDefaults(): array
+    {
+        return ['name' => 'Ingredient '.$this->uuid, 'default_unit' => null, 'category' => null];
     }
 }

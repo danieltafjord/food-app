@@ -41,6 +41,7 @@ class HouseholdController extends Controller
 
     public function update(HouseholdInputData $data, Household $household, UpdateHousehold $action): HouseholdData
     {
+        Household::query()->whereKey($household->id)->lockForUpdate()->firstOrFail();
         $this->authorize('update', $household);
 
         return HouseholdData::from($action->handle($household, $data));

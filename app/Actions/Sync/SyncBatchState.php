@@ -21,6 +21,9 @@ class SyncBatchState
     /** @var array<string, array<int, true>> resource → set of ids owned by the household */
     private array $owned = [];
 
+    /** @var array<string, array<int, true>> resource → live parent ids */
+    private array $live = [];
+
     /** @var array<string, array<string, true>> resource → pushed uuids merged onto another row (never a row's own uuid) */
     private array $aliases = [];
 
@@ -33,6 +36,7 @@ class SyncBatchState
     /**
      * @param  Closure(string): array<string, int>  $loadMap  full uuid→id map of a resource (trashed included)
      * @param  Closure(string, list<int>): array<int, string>  $loadUuids  id→uuid for just the given ids
+     * @param  Closure(string): list<int>  $loadLiveIds  live parent ids for foreign-key validation
      * @param  Closure(): array<string, array{id: int, uuid: string}>  $loadIngredientNames  live ingredients by lower-cased name
      * @param  Closure(): int  $allocateVersion
      * @param  array<string, array<int, array{id: ?string, code: string, message: string}>>  $rejected
@@ -42,6 +46,7 @@ class SyncBatchState
     public function __construct(
         private Closure $loadMap,
         private Closure $loadUuids,
+        private Closure $loadLiveIds,
         private Closure $loadIngredientNames,
         private Closure $allocateVersion,
         public array $rejected = [],
@@ -71,10 +76,25 @@ class SyncBatchState
         return $this->version;
     }
 
-    /** Internal id for a parent uuid, or null if the household has no such row. */
-    public function id(string $resource, string $uuid): ?int
+    /** Internal id for a live parent; tombstones remain available only for ownership and serialization. */
+    public function liveId(string $resource, string $uuid): ?int
     {
-        return $this->map($resource)[$uuid] ?? null;
+        $id = $this->map($resource)[$uuid] ?? null;
+        $this->live[$resource] ??= array_fill_keys(($this->loadLiveIds)($resource), true);
+
+        return $id !== null && isset($this->live[$resource][$id]) ? $id : null;
+    }
+
+    public function markDeleted(string $resource, int $id): void
+    {
+        unset($this->live[$resource][$id]);
+    }
+
+    public function markLive(string $resource, int $id): void
+    {
+        if (isset($this->live[$resource])) {
+            $this->live[$resource][$id] = true;
+        }
     }
 
     /** Whether the household owns the row with this internal id. */

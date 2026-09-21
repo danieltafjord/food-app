@@ -15,17 +15,18 @@ class AcceptInvitation
      */
     public function handle(HouseholdInvitation $invitation, User $user): Household
     {
-        if (! $invitation->isPending()) {
-            abort(409, 'This invitation is no longer valid.');
-        }
+        return DB::transaction(function () use ($invitation, $user): Household {
+            $household = Household::query()->lockForUpdate()->findOrFail($invitation->household_id);
+            $invitation = HouseholdInvitation::query()->lockForUpdate()->findOrFail($invitation->id);
 
-        if (Str::lower($invitation->email) !== Str::lower($user->email)) {
-            abort(403, 'This invitation was sent to a different email address.');
-        }
+            if (! $invitation->isPending()) {
+                abort(409, 'This invitation is no longer valid.');
+            }
 
-        $household = $invitation->household;
+            if (Str::lower($invitation->email) !== Str::lower($user->email)) {
+                abort(403, 'This invitation was sent to a different email address.');
+            }
 
-        return DB::transaction(function () use ($invitation, $user, $household): Household {
             if (! $household->hasMember($user)) {
                 $household->members()->attach($user, ['role' => $invitation->role->value]);
             }

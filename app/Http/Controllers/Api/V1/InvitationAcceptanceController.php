@@ -18,11 +18,15 @@ class InvitationAcceptanceController extends Controller
      */
     public function accept(Request $request, HouseholdInvitation $invitation, AcceptInvitation $action): HouseholdData
     {
+        abort_unless($request->user()->hasVerifiedEmail(), 403, 'Verify your email address before responding to household invitations.');
+
         return HouseholdData::from($action->handle($invitation, $request->user()));
     }
 
     public function decline(Request $request, HouseholdInvitation $invitation, DeclineInvitation $action): JsonResponse
     {
+        abort_unless($request->user()->hasVerifiedEmail(), 403, 'Verify your email address before responding to household invitations.');
+
         abort_unless(
             Str::lower($invitation->email) === Str::lower($request->user()->email),
             403,

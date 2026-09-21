@@ -9,11 +9,15 @@ use Illuminate\Http\Request;
 class LogoutController extends Controller
 {
     /**
-     * Revoke the access token used for the current request.
+     * Revoke the current access token and its refresh credentials.
      */
     public function __invoke(Request $request): JsonResponse
     {
-        $request->user()->token()->revoke();
+        $token = $request->user()->token();
+        $token->getConnection()->transaction(function () use ($token): void {
+            $token->revoke();
+            $token->refreshToken()->update(['revoked' => true]);
+        });
 
         return response()->json(['message' => 'Logged out.']);
     }

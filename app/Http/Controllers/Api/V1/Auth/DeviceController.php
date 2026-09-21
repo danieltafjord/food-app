@@ -33,7 +33,11 @@ class DeviceController extends Controller
      */
     public function destroy(Request $request, string $token): JsonResponse
     {
-        $request->user()->tokens()->whereKey($token)->firstOrFail()->revoke();
+        $deviceToken = $request->user()->tokens()->whereKey($token)->firstOrFail();
+        $deviceToken->getConnection()->transaction(function () use ($deviceToken): void {
+            $deviceToken->revoke();
+            $deviceToken->refreshToken()->update(['revoked' => true]);
+        });
 
         return response()->json(['message' => 'Device revoked.']);
     }

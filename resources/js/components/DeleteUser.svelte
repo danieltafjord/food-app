@@ -21,7 +21,7 @@
     <Heading
         variant="small"
         title="Delete account"
-        description="Delete your account and all of its resources"
+        description="Permanently delete your account"
     />
     <div
         class="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10"
@@ -50,11 +50,14 @@
                                 >Are you sure you want to delete your account?</DialogTitle
                             >
                             <DialogDescription>
-                                Once your account is deleted, all of its
-                                resources and data will also be permanently
-                                deleted. Please enter your password to confirm
-                                you would like to permanently delete your
-                                account.
+                                Your account and households where you are the
+                                only member will be deleted. Recipes, meal
+                                plans, and shopping lists you created will be
+                                removed from shared households. Other members'
+                                content and shared ingredients will remain. If
+                                you are the last owner, another member will
+                                become the owner. Enter your password to
+                                confirm.
                             </DialogDescription>
                         </div>
 

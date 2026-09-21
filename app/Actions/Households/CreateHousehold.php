@@ -22,7 +22,8 @@ class CreateHousehold
                 $attributes['default_servings'] = $data->defaultServings;
             }
 
-            $household = Household::create($attributes);
+            $household = (new Household($attributes))->attributeContentTo($user->id);
+            $household->save();
 
             $household->members()->attach($user, ['role' => HouseholdRole::Owner->value]);
             $user->update(['current_household_id' => $household->id]);

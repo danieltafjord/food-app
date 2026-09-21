@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\MealType;
 use App\Models\Concerns\Syncable;
+use App\Models\Concerns\TracksContentAuthors;
 use Database\Factories\DinnerPlanEntryFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class DinnerPlanEntry extends Model
 {
     /** @use HasFactory<DinnerPlanEntryFactory> */
-    use HasFactory, Syncable;
+    use HasFactory, Syncable, TracksContentAuthors;
 
     /** @var list<string> */
     protected $fillable = [
@@ -60,5 +61,11 @@ class DinnerPlanEntry extends Model
         }
 
         return (int) DinnerPlan::withTrashed()->whereKey($this->dinner_plan_id)->value('household_id');
+    }
+
+    /** @return array<string, mixed> */
+    public function contentErasureDefaults(): array
+    {
+        return ['scheduled_date' => '1970-01-01', 'servings' => 1, 'meal_type' => MealType::Dinner->value, 'notes' => null];
     }
 }

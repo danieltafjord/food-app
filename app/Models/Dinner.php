@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Syncable;
+use App\Models\Concerns\TracksContentAuthors;
 use Carbon\CarbonInterface;
 use Database\Factories\DinnerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Dinner extends Model
 {
     /** @use HasFactory<DinnerFactory> */
-    use HasFactory, Syncable;
+    use HasFactory, Syncable, TracksContentAuthors;
 
     /** @var list<string> */
     protected $fillable = [
@@ -86,5 +87,11 @@ class Dinner extends Model
         // Leaf tables: one UPDATE each, no per-row model round-trips.
         $this->items()->update($this->tombstoneStamp($deletedAt, $version));
         $this->planEntries()->update($this->tombstoneStamp($deletedAt, $version));
+    }
+
+    /** @return array<string, mixed> */
+    public function contentErasureDefaults(): array
+    {
+        return ['name' => 'Recipe', 'default_servings' => 1, 'notes' => null];
     }
 }

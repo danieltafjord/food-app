@@ -1,5 +1,8 @@
 <?php
 
+use App\Actions\Sync\ApplySyncBatch;
+use App\Actions\Users\DeleteAccount;
+use App\Enums\HouseholdRole;
 use App\Models\Dinner;
 use App\Models\DinnerItem;
 use App\Models\DinnerPlan;
@@ -8,9 +11,12 @@ use App\Models\Ingredient;
 use App\Models\ShoppingList;
 use App\Models\ShoppingListItem;
 use App\Models\User;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Passport;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 beforeEach(function () {
     [$this->user, $this->household] = ownerWithHousehold();
@@ -156,6 +162,60 @@ it('rejects invalid rows individually instead of returning 500', function () {
     $this->assertDatabaseHas('dinner_plans', ['uuid' => $plan['id']]);
 });
 
+it('never queries native UUID columns with an invalid incoming identity', function () {
+    DB::enableQueryLog();
+
+    try {
+        $valid = ingredientRow();
+        sync(null, ['ingredients' => [$valid, array_replace(ingredientRow(), ['id' => 'invalid-uuid'])]])
+            ->assertSuccessful()
+            ->assertJsonPath('rejected.ingredients.0.code', 'invalid');
+
+        $this->assertDatabaseHas('ingredients', ['uuid' => $valid['id']]);
+
+        expect(collect(DB::getQueryLog())->pluck('bindings')->flatten()->all())
+            ->not->toContain('invalid-uuid');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+});
+
+it('rejects live children referencing a tombstoned parent', function (string $deletedResource, bool $sameBatch) {
+    $ingredient = ingredientRow();
+    $dinner = dinnerRow();
+    $item = syncRow(['dinner_id' => $dinner['id'], 'ingredient_id' => $ingredient['id'], 'quantity' => 1, 'unit' => 'g']);
+    $cursor = sync(null, ['ingredients' => [$ingredient], 'dinners' => [$dinner]])->json('cursor');
+    $deletedId = $deletedResource === 'ingredients' ? $ingredient['id'] : $dinner['id'];
+    $changes = [$deletedResource => [tombstone($deletedId)]];
+
+    if (! $sameBatch) {
+        $cursor = sync($cursor, $changes)->assertSuccessful()->json('cursor');
+        $changes = [];
+    }
+
+    $changes['dinner_items'] = [$item];
+    sync($cursor, $changes)->assertSuccessful()
+        ->assertJsonPath('rejected.dinner_items.0.code', 'unknown_parent');
+
+    $this->assertDatabaseMissing('dinner_items', ['uuid' => $item['id']]);
+})->with(['ingredients', 'dinners'])->with([true, false]);
+
+it('allows children after their tombstoned parent is explicitly restored', function () {
+    $ingredient = ingredientRow();
+    $dinner = dinnerRow();
+    $cursor = sync(null, ['ingredients' => [$ingredient], 'dinners' => [$dinner]])->json('cursor');
+    $cursor = sync($cursor, ['dinners' => [tombstone($dinner['id'])]])->json('cursor');
+    $this->travel(1)->seconds();
+    $dinner['updated_at'] = now()->toISOString();
+    $item = syncRow(['dinner_id' => $dinner['id'], 'ingredient_id' => $ingredient['id'], 'quantity' => 1, 'unit' => 'g']);
+
+    sync($cursor, ['dinners' => [$dinner], 'dinner_items' => [$item]])->assertSuccessful()
+        ->assertJsonPath('rejected', []);
+
+    $this->assertDatabaseHas('dinner_items', ['uuid' => $item['id'], 'deleted_at' => null]);
+});
+
 it('refuses a malformed envelope, an unknown resource, and an oversized batch', function () {
     sync(null, ['ingredients' => 'nope'])->assertStatus(422);
     sync(null, ['cars' => []])->assertStatus(422);
@@ -163,6 +223,21 @@ it('refuses a malformed envelope, an unknown resource, and an oversized batch', 
 
     $rows = array_map(fn () => ingredientRow((string) Str::random(8)), range(1, 1001));
     sync(null, ['ingredients' => $rows])->assertStatus(422);
+});
+
+it('keeps the newest edit when conflicting updates were made within the same second', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-21T12:00:01Z'));
+    $ingredient = ingredientRow('Newest');
+    $ingredient['updated_at'] = '2026-09-21T12:00:00.900000Z';
+    $cursor = sync(null, ['ingredients' => [$ingredient]])->assertSuccessful()->json('cursor');
+    $ingredient['name'] = 'Older';
+    $ingredient['updated_at'] = '2026-09-21T12:00:00.100000Z';
+
+    sync($cursor, ['ingredients' => [$ingredient]])->assertSuccessful()
+        ->assertJsonPath('changes.ingredients.0.name', 'Newest')
+        ->assertJsonPath('changes.ingredients.0.updated_at', '2026-09-21T12:00:00.900000Z');
+
+    $this->assertDatabaseHas('ingredients', ['uuid' => $ingredient['id'], 'name' => 'Newest']);
 });
 
 it('keeps the newest version under last-write-wins and clamps future clocks', function () {
@@ -494,4 +569,68 @@ it('requires an active household', function () {
     Passport::actingAs(User::factory()->create());
 
     sync()->assertConflict();
+});
+
+it('detaches shopping lists when their plan is deleted and syncs the remaining list', function () {
+    $otherMember = User::factory()->create();
+    $plan = DinnerPlan::factory()->for($this->household)->create();
+    $list = ShoppingList::factory()->for($this->household)->for($plan)->create([
+        'created_by_user_id' => $otherMember->id,
+        'name' => 'Keep this list',
+    ]);
+    $item = ShoppingListItem::factory()->for($list)->create(['ingredient_id' => null, 'name' => 'Keep this item']);
+    $cursor = sync(null)->json('cursor');
+
+    sync($cursor, ['dinner_plans' => [tombstone($plan->uuid)]])->assertSuccessful()
+        ->assertJsonPath('changes.shopping_lists.0.dinner_plan_id', null);
+    $list->refresh();
+
+    expect($list->dinner_plan_id)->toBeNull()
+        ->and($list->created_by_user_id)->toBe($otherMember->id)
+        ->and($list->name)->toBe('Keep this list')
+        ->and($item->fresh()->name)->toBe('Keep this item')
+        ->and($item->fresh()->trashed())->toBeFalse();
+
+    sync(null)->assertSuccessful()->assertJsonPath('changes.shopping_lists.0.dinner_plan_id', null);
+});
+
+it('attributes mobile-created resources to the authenticated user and erases them on account deletion', function () {
+    $otherMember = User::factory()->create(['current_household_id' => $this->household->id]);
+    $this->household->members()->attach($otherMember, ['role' => HouseholdRole::Owner->value]);
+    $dinner = dinnerRow('Private recipe');
+    $plan = syncRow(['name' => 'Private plan', 'start_date' => null, 'end_date' => null]);
+    $list = syncRow(['name' => 'Private list', 'dinner_plan_id' => $plan['id']]);
+    $changes = [
+        'dinners' => [$dinner + ['created_by_user_id' => $otherMember->id]],
+        'dinner_plans' => [$plan + ['created_by_user_id' => $otherMember->id]],
+        'shopping_lists' => [$list + ['created_by_user_id' => $otherMember->id]],
+    ];
+    sync(null, $changes)->assertSuccessful();
+
+    $models = [Dinner::firstWhere('uuid', $dinner['id']), DinnerPlan::firstWhere('uuid', $plan['id']), ShoppingList::firstWhere('uuid', $list['id'])];
+    foreach ($models as $model) {
+        expect($model->created_by_user_id)->toBe($this->user->id);
+    }
+
+    Passport::actingAs($otherMember);
+    $this->travel(1)->seconds();
+    $dinner['name'] = 'Edited by another member';
+    $dinner['updated_at'] = now()->toISOString();
+    sync(null, ['dinners' => [$dinner + ['created_by_user_id' => $otherMember->id]]])->assertSuccessful();
+    expect($models[0]->fresh()->created_by_user_id)->toBe($this->user->id);
+
+    app(DeleteAccount::class)->handle($this->user);
+
+    foreach ($models as $model) {
+        $model->refresh();
+        expect($model->trashed())->toBeTrue()
+            ->and($model->name)->toBe('')
+            ->and($model->created_by_user_id)->toBeNull();
+    }
+    $this->assertModelExists($this->household);
+    $this->assertModelExists($otherMember);
+
+    expect(fn () => app(ApplySyncBatch::class)->handle($this->household, $this->user, null, ['dinners' => [$dinner]]))
+        ->toThrow(HttpException::class, 'You are no longer a member of this household.');
+    expect($models[0]->fresh()->trashed())->toBeTrue();
 });

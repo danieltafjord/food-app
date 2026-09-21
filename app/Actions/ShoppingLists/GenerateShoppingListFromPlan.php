@@ -52,26 +52,35 @@ class GenerateShoppingListFromPlan
                         'ingredient_id' => $item->ingredient_id,
                         'unit' => $unit,
                         'quantity' => $scaled,
+                        'sources' => [$item],
                     ];
-                } elseif ($scaled !== null) {
-                    $aggregated[$key]['quantity'] = ($aggregated[$key]['quantity'] ?? 0) + $scaled;
+                } else {
+                    $aggregated[$key]['sources'][] = $item;
+                    if ($scaled !== null) {
+                        $aggregated[$key]['quantity'] = ($aggregated[$key]['quantity'] ?? 0) + $scaled;
+                    }
                 }
             }
         }
 
         return DB::transaction(function () use ($plan, $user, $aggregated): ShoppingList {
-            $list = $plan->household->shoppingLists()->create([
+            $list = $plan->household->shoppingLists()->make([
                 'dinner_plan_id' => $plan->id,
                 'created_by_user_id' => $user->id,
                 'name' => $plan->name,
             ]);
+            $list->attributeContentTo($user->id)->inheritContentAuthors($plan, ['name' => 'name'])->save();
 
             foreach ($aggregated as $row) {
-                $list->items()->create([
+                $item = $list->items()->make([
                     'ingredient_id' => $row['ingredient_id'],
                     'quantity' => $row['quantity'] !== null ? round($row['quantity'], 2) : null,
                     'unit' => $row['unit'],
                 ]);
+                foreach ($row['sources'] as $source) {
+                    $item->inheritContentAuthors($source, ['unit' => 'unit', 'quantity' => 'quantity']);
+                }
+                $item->attributeContentTo($user->id)->save();
             }
 
             return $list->load('items.ingredient');

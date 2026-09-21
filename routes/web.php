@@ -19,6 +19,8 @@ Route::get('/.well-known/apple-app-site-association', function (): JsonResponse 
 })->name('apple-app-site-association');
 
 Route::inertia('/', 'Welcome')->name('home');
+Route::inertia('/privacy', 'Privacy', ['contact' => config('handlelista.contact')])->name('privacy');
+Route::inertia('/support', 'Support', ['contact' => config('handlelista.contact')])->name('support');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
