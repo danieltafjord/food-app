@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ config('app.name', 'Laravel') }} — Authorization</title>
+    <title>{{ config('app.name', 'Handlelista') }} — Authorization</title>
     <style>
         :root { color-scheme: light dark; }
         * { box-sizing: border-box; }
@@ -59,7 +59,7 @@
         <h1>Authorization request</h1>
         <p>
             <strong>{{ $client->name }}</strong> is requesting permission to access
-            your {{ config('app.name', 'Laravel') }} account
+            your {{ config('app.name', 'Handlelista') }} account
             @if (! empty($user->name)) ({{ $user->name }}) @endif.
         </p>
 

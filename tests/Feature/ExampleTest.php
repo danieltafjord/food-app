@@ -1,7 +1,12 @@
 <?php
 
-test('returns a successful response', function () {
-    $response = $this->get(route('home'));
+use Inertia\Testing\AssertableInertia as Assert;
 
-    $response->assertOk();
+test('the landing page is available without an account', function () {
+    $this->get(route('localized.home', ['locale' => 'en']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Welcome')
+            ->where('auth.user', null)
+        );
 });

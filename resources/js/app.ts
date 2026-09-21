@@ -6,15 +6,13 @@ import SettingsLayout from '@/layouts/settings/Layout.svelte';
 import { initializeFlashToast } from '@/lib/flash-toast';
 import { initializeTheme } from '@/lib/theme.svelte';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = import.meta.env.VITE_APP_NAME || 'Handlelista';
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
     layout: (name) => {
         switch (true) {
-            case name === 'Welcome':
-                return null;
-            case name === 'Privacy' || name === 'Support':
+            case name === 'Welcome' || name === 'Privacy' || name === 'Support':
                 return PublicLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;

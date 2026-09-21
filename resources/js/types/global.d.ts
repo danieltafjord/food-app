@@ -21,6 +21,8 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             name: string;
             auth: Auth;
+            locale: 'no' | 'en';
+            seo?: { title: string };
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

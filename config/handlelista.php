@@ -1,8 +1,10 @@
 <?php
 
 return [
+    'locales' => ['no', 'en'],
+
     'contact' => [
         'operatorName' => 'Daniel Tafjord',
-        'supportEmail' => 'support@handlelistaapp.no',
+        'supportEmail' => 'daniel@atami.no',
     ],
 ];
