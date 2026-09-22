@@ -5,6 +5,8 @@ use App\Actions\Ai\RunAiRequest;
 use App\Actions\Ai\SuggestDinnerIngredients;
 use App\Actions\ApiTokens\CreateApiToken;
 use App\Enums\HouseholdRole;
+use App\Models\AiRequest;
+use App\Models\ApiRequest;
 use App\Models\Ingredient;
 use App\Models\User;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -429,4 +431,80 @@ it('prunes expired usage without resetting current budgets', function () {
     $this->artisan('ai:prune-usage')->assertSuccessful();
     $this->assertDatabaseCount('ai_daily_usage', 1);
     $this->assertDatabaseHas('ai_daily_usage', ['day' => now('UTC')->toDateString(), 'used' => 5]);
+});
+
+it('records the request context, provider answer and errors for the admin log', function () {
+    [$user, $household] = ownerWithHousehold();
+    enableAi($user);
+    Http::fake(['https://openrouter.ai/api/v1/systemone' => Http::sequence()
+        ->push(jevAnswer() + ['usage' => ['input_tokens' => 50, 'output_tokens' => 4, 'cost' => 0.0001]])
+        ->push(['error' => 'upstream exploded, key test-server-key'], 502)]);
+
+    $this->postJson('/api/v1/ai/categorize', ['name' => 'Pak choi', 'locale' => 'nb'])->assertOk();
+    $this->postJson('/api/v1/ai/categorize', ['name' => 'pak choi', 'locale' => 'nb'])->assertOk();
+    $this->postJson('/api/v1/ai/categorize', ['name' => 'Durian', 'locale' => 'nb'])->assertStatus(503);
+
+    $rows = AiRequest::query()->orderBy('id')->get();
+    expect($rows)->toHaveCount(3);
+    expect($rows[0])->status->toBe('ok')->request->toBe(['name' => 'pak choi', 'locale' => 'nb'])->error->toBeNull();
+    expect($rows[0]->response['data'])->toBe(['category' => 'produce']);
+    expect($rows[0]->response['raw']['answers']['category']['choice'])->toBe('produce');
+    expect($rows[0]->response['raw']['usage']['cost'])->toBe(0.0001);
+    expect($rows[1])->status->toBe('cached')->request->toBe(['name' => 'pak choi', 'locale' => 'nb']);
+    expect($rows[1]->response)->toBe(['category' => 'produce']);
+    expect($rows[2])->status->toBe('failed')->request->toBe(['name' => 'durian', 'locale' => 'nb'])->response->toBeNull();
+    expect($rows[2]->error)->toContain('RequestException')->toContain('upstream exploded')->toContain('[redacted]')->not->toContain('test-server-key');
+});
+
+it('ties AI request rows to the API request that triggered them', function () {
+    [$user] = ownerWithHousehold();
+    enableAi($user);
+    Http::fake(['https://openrouter.ai/api/v1/systemone' => Http::response(jevAnswer())]);
+
+    $response = $this->postJson('/api/v1/ai/categorize', ['name' => 'Pak choi', 'locale' => 'nb'])->assertOk();
+
+    $requestId = $response->headers->get('X-Request-Id');
+    expect(AiRequest::query()->sole()->request_id)->toBe($requestId);
+    expect(ApiRequest::query()->sole()->request_id)->toBe($requestId);
+});
+
+it('preserves a manual category across devices regardless of arrival order', function (bool $manualFirst, ?string $manualCategory) {
+    $this->freezeTime();
+    [$user, $household] = ownerWithHousehold();
+    Passport::actingAs($user);
+    $ingredient = Ingredient::factory()->for($household)->create([
+        'category' => $manualFirst ? $manualCategory : 'pantry',
+        'category_source' => $manualFirst ? 'user' : 'ai',
+        'updated_at' => $manualFirst ? now()->subSeconds(10) : now(),
+    ]);
+
+    $this->postJson('/api/v1/sync', ['household_id' => $household->id, 'changes' => [
+        'ingredients' => [[
+            'id' => $ingredient->uuid, 'name' => $ingredient->name,
+            'category' => $manualFirst ? 'pantry' : $manualCategory,
+            'category_source' => $manualFirst ? 'ai' : 'user',
+            'updated_at' => ($manualFirst ? now() : now()->subSeconds(10))->toISOString(),
+        ]],
+    ]])->assertOk()->assertJsonPath('changes.ingredients.0.category_source', 'user')
+        ->assertJsonPath('changes.ingredients.0.category', $manualCategory);
+
+    expect($ingredient->refresh())->category->toBe($manualCategory)->category_source->toBe('user');
+})->with([true, false])->with(['frozen', null]);
+
+it('records actual suggestion cost and counts cached and reasoning tokens once', function () {
+    [$user] = ownerWithHousehold();
+    enableAi($user);
+    Http::preventStrayRequests();
+    Http::fake(['https://openrouter.ai/api/v1/chat/completions' => Http::response([
+        'id' => 'usage-test', 'model' => 'test-model',
+        'choices' => [['index' => 0, 'message' => ['role' => 'assistant', 'content' => '{"ingredients":["Onion"]}'], 'finish_reason' => 'stop']],
+        'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 30, 'total_tokens' => 130, 'cost' => 0.0042,
+            'prompt_tokens_details' => ['cached_tokens' => 40], 'completion_tokens_details' => ['reasoning_tokens' => 20]],
+    ])]);
+
+    $this->postJson('/api/v1/ai/suggest', ['name' => 'Tacos', 'ingredients' => [], 'locale' => 'en'])
+        ->assertOk()->assertJsonPath('data.ingredients', ['Onion']);
+
+    expect(AiRequest::query()->sole())->input_tokens->toBe(100)->output_tokens->toBe(30)->cost->toEqualWithDelta(0.0042, 0.000001);
+    Http::assertSent(fn ($request) => $request['provider']['data_collection'] === 'deny');
 });

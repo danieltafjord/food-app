@@ -144,7 +144,9 @@
     </form>
 
     <p class="text-sm text-muted-foreground">
-        Requests are never used to train models, and the text you send is not
-        stored. Daily limits reset at midnight UTC.
+        Requests are sent through OpenRouter to model providers under their data
+        policies. The text you send and the answer you get are kept for 30 days
+        so we can fix failures, then deleted. Daily limits reset at midnight
+        UTC.
     </p>
 </div>

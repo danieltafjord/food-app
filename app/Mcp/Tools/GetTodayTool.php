@@ -15,16 +15,15 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[Description('What the household has planned to eat today (or on another date).')]
 #[IsReadOnly]
-class GetTodayTool extends HouseholdTool
+class GetTodayTool extends PaginatedHouseholdTool
 {
     public function handle(Request $request, ListEntriesForDate $action): Response
     {
         $validated = $request->validate(['date' => ['nullable', 'date']]);
 
-        $entries = $action->handle($this->household(), Date::parse($validated['date'] ?? today()))
-            ->map(fn (DinnerPlanEntry $entry) => DinnerPlanEntryData::fromEntry($entry)->toArray());
-
-        return Response::json($entries->all());
+        return Response::json($this->page($request,
+            $action->query($this->household(), Date::parse($validated['date'] ?? today())),
+            fn (DinnerPlanEntry $entry) => DinnerPlanEntryData::fromEntry($entry)->toArray(), searchable: false));
     }
 
     /**
@@ -36,6 +35,7 @@ class GetTodayTool extends HouseholdTool
     {
         return [
             'date' => $schema->string()->format('date')->description('Day to look up as YYYY-MM-DD. Defaults to today.'),
+            ...$this->pageSchema($schema, searchable: false),
         ];
     }
 }

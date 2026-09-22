@@ -25,7 +25,8 @@ test('the users page lists, searches and filters users', function () {
             ->where('users.data.1.is_admin', false)
             ->where('users.data.1.deactivated_at', null)
             ->where('users.data.2.is_admin', true)
-            ->where('filters', ['search' => '', 'status' => 'all', 'household' => null, 'sort' => 'joined', 'direction' => 'desc'])
+            ->where('filters', ['search' => '', 'status' => 'all', 'household' => null, 'sort' => 'joined', 'direction' => 'desc', 'per_page' => 25])
+            ->where('pageSizes', [25, 50, 100])
         );
 
     $this->actingAs($admin)
@@ -75,8 +76,12 @@ test('users can be found by id, filtered by household and sorted', function () {
         ->assertInertia(fn (Assert $page) => $page->where('users.data.0.id', $member->id));
 
     $this->actingAs($admin)
-        ->get(route('admin.users.index', ['sort' => 'bogus', 'direction' => 'sideways']))
-        ->assertInertia(fn (Assert $page) => $page->where('filters.sort', 'joined')->where('filters.direction', 'desc'));
+        ->get(route('admin.users.index', ['sort' => 'bogus', 'direction' => 'sideways', 'per_page' => 7]))
+        ->assertInertia(fn (Assert $page) => $page->where('filters.sort', 'joined')->where('filters.direction', 'desc')->where('filters.per_page', 25));
+
+    $this->actingAs($admin)
+        ->get(route('admin.users.index', ['per_page' => 50]))
+        ->assertInertia(fn (Assert $page) => $page->where('filters.per_page', 50)->where('users.per_page', 50));
 });
 
 test('the user detail page shows households, tokens, apps, AI requests and the audit trail', function () {

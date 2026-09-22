@@ -27,7 +27,8 @@
     import AppHead from '@/components/AppHead.svelte';
     import BarChart from '@/components/BarChart.svelte';
     import { cn } from '@/lib/utils';
-    import { index as usersRoute } from '@/routes/admin/users';
+    import { index as aiRequestsRoute } from '@/routes/admin/ai-requests';
+    import { index as apiRequestsRoute } from '@/routes/admin/api-requests';
 
     type DailyAi = { day: string; ok: number; cached: number; failed: number };
 
@@ -42,14 +43,13 @@
                 new_users: number;
                 households: number;
                 active_households: number;
-                dinners: number;
-                dinner_plans: number;
-                shopping_lists: number;
-                ingredients: number;
-                api_tokens: number;
-                connected_apps: number;
             };
             signups: { day: string; value: number }[];
+        };
+        api: {
+            requests: number;
+            client_errors: number;
+            server_errors: number;
         };
         ai: {
             features: Record<string, string>;
@@ -59,29 +59,9 @@
                 cached: number;
                 failed: number;
                 avg_duration_ms: number;
-                input_tokens: number;
-                output_tokens: number;
                 cost: number;
-                categorization_users: number;
-                suggestions_users: number;
             };
-            daily: Record<string, DailyAi[]>;
-            models: {
-                feature: string;
-                model: string;
-                requests: number;
-                input_tokens: number;
-                output_tokens: number;
-                cost: number;
-            }[];
-            households: {
-                household_id: number;
-                name: string;
-                requests: number;
-                failed: number;
-                users: number;
-                cost: number;
-            }[];
+            daily: DailyAi[];
             today: { feature: string; used: number; limit: number }[];
         };
     };
@@ -121,9 +101,6 @@
             : analytics.ai.totals.failed /
                   analytics.ai.totals.provider_requests,
     );
-    const cacheRate = $derived(
-        percent(analytics.ai.totals.cached, analytics.ai.totals.requests),
-    );
 
     const appStats = $derived<Stat[]>([
         {
@@ -137,32 +114,28 @@
             hint: 'Accounts created in this window',
         },
         {
-            label: 'Households',
-            value: number(analytics.app.totals.households),
-            hint: `${number(analytics.app.totals.active_households)} active this week`,
+            label: 'Active households',
+            value: number(analytics.app.totals.active_households),
+            hint: `Synced this week, of ${number(analytics.app.totals.households)} in total`,
         },
         {
-            label: 'Dinners',
-            value: number(analytics.app.totals.dinners),
-            hint: `${number(analytics.app.totals.dinner_plans)} dinner plans`,
-        },
-        {
-            label: 'Shopping lists',
-            value: number(analytics.app.totals.shopping_lists),
-            hint: `${number(analytics.app.totals.ingredients)} ingredients`,
-        },
-        {
-            label: 'API tokens',
-            value: number(analytics.app.totals.api_tokens),
-            hint: `${number(analytics.app.totals.connected_apps)} connected apps`,
+            label: 'API requests',
+            value: number(analytics.api.requests),
+            hint: `${number(analytics.api.client_errors)} client errors, ${number(analytics.api.server_errors)} server errors`,
+            tone:
+                analytics.api.server_errors > 0
+                    ? 'danger'
+                    : analytics.api.client_errors > 0
+                      ? 'warning'
+                      : 'default',
         },
     ]);
 
     const aiStats = $derived<Stat[]>([
         {
-            label: 'Requests',
+            label: 'AI requests',
             value: number(analytics.ai.totals.requests),
-            hint: `${number(analytics.ai.totals.provider_requests)} to the provider, ${cacheRate} from cache`,
+            hint: `${number(analytics.ai.totals.provider_requests)} to the provider, ${percent(analytics.ai.totals.cached, analytics.ai.totals.requests)} from cache`,
         },
         {
             label: 'Failure rate',
@@ -184,27 +157,9 @@
             hint: 'Successful provider calls only',
         },
         {
-            label: 'Tokens',
-            value: number(
-                analytics.ai.totals.input_tokens +
-                    analytics.ai.totals.output_tokens,
-            ),
-            hint: `${number(analytics.ai.totals.input_tokens)} in, ${number(analytics.ai.totals.output_tokens)} out`,
-        },
-        {
             label: 'Reported cost',
             value: money(analytics.ai.totals.cost),
             hint: 'Only System One reports cost',
-        },
-        {
-            label: 'Opted in',
-            value: number(
-                Math.max(
-                    analytics.ai.totals.categorization_users,
-                    analytics.ai.totals.suggestions_users,
-                ),
-            ),
-            hint: `${number(analytics.ai.totals.categorization_users)} categorization, ${number(analytics.ai.totals.suggestions_users)} suggestions`,
         },
     ]);
 
@@ -217,21 +172,24 @@
         },
     ]);
 
-    function aiSeries(rows: DailyAi[]) {
-        return [
-            { key: 'ok', label: 'Succeeded', values: rows.map((r) => r.ok) },
-            {
-                key: 'cached',
-                label: 'Cached',
-                values: rows.map((r) => r.cached),
-            },
-            {
-                key: 'failed',
-                label: 'Failed',
-                values: rows.map((r) => r.failed),
-            },
-        ];
-    }
+    const aiLabels = $derived(analytics.ai.daily.map((row) => row.day));
+    const aiSeries = $derived([
+        {
+            key: 'ok',
+            label: 'Succeeded',
+            values: analytics.ai.daily.map((r) => r.ok),
+        },
+        {
+            key: 'cached',
+            label: 'Cached',
+            values: analytics.ai.daily.map((r) => r.cached),
+        },
+        {
+            key: 'failed',
+            label: 'Failed',
+            values: analytics.ai.daily.map((r) => r.failed),
+        },
+    ]);
 
     function meterClass(ratio: number): string {
         if (ratio >= 0.9) {
@@ -244,13 +202,16 @@
 
         return 'bg-emerald-500';
     }
+
+    const linkClass =
+        'text-sm font-medium text-muted-foreground hover:text-foreground hover:underline';
 </script>
 
 <AppHead title="Analytics" />
 
 <AdminPage
     title="Analytics"
-    description="How the app and its AI features are used, {analytics.from} to {analytics.to}. Days are counted in UTC, so late-evening activity in Norway lands on the next day."
+    description="The numbers worth watching, {analytics.from} to {analytics.to}. Days are counted in UTC. Per-request detail is in the AI and API request logs."
 >
     {#snippet actions()}
         <p class="text-xs text-muted-foreground tabular-nums">
@@ -274,7 +235,13 @@
     {/snippet}
 
     <AdminSection title="App">
-        <StatStrip stats={appStats} />
+        {#snippet actions()}
+            <Link
+                href={apiRequestsRoute({ query: { outcome: 'errors' } }).url}
+                class={linkClass}>Failed API requests</Link
+            >
+        {/snippet}
+        <StatStrip stats={appStats} columns={4} />
         <AdminPanel>
             <BarChart
                 title="Sign-ups per day"
@@ -286,22 +253,22 @@
     </AdminSection>
 
     <AdminSection title="AI assistance">
-        <StatStrip stats={aiStats} />
-
-        <div class="grid gap-3 lg:grid-cols-2">
-            {#each Object.entries(analytics.ai.daily) as [feature, rows] (feature)}
-                <AdminPanel>
-                    <BarChart
-                        title="{analytics.ai.features[feature] ??
-                            feature} per day"
-                        labels={rows.map((row) => row.day)}
-                        series={aiSeries(rows)}
-                    />
-                </AdminPanel>
-            {/each}
-        </div>
+        {#snippet actions()}
+            <Link href={aiRequestsRoute().url} class={linkClass}
+                >AI request log</Link
+            >
+        {/snippet}
+        <StatStrip stats={aiStats} columns={4} />
 
         <div class="grid gap-3 lg:grid-cols-5">
+            <AdminPanel class="lg:col-span-3">
+                <BarChart
+                    title="AI requests per day"
+                    labels={aiLabels}
+                    series={aiSeries}
+                />
+            </AdminPanel>
+
             <AdminPanel
                 title="Today's global budget"
                 description="Resets at 00:00 UTC. Change the budgets on the AI models page."
@@ -352,155 +319,6 @@
                     {/each}
                 </ul>
             </AdminPanel>
-
-            <AdminPanel
-                title="Models used"
-                description="Includes cache hits. Tokens and cost count successful provider calls only."
-                padded={false}
-                class="lg:col-span-3"
-            >
-                {#if analytics.ai.models.length === 0}
-                    <p
-                        class="px-5 py-8 text-center text-sm text-muted-foreground"
-                    >
-                        No AI requests in this period. Usage shows up here as
-                        soon as a user opts in.
-                    </p>
-                {:else}
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead>
-                                <tr
-                                    class="border-b text-left text-xs text-muted-foreground"
-                                >
-                                    <th class="px-5 py-2.5 font-medium"
-                                        >Feature</th
-                                    >
-                                    <th class="px-5 py-2.5 font-medium"
-                                        >Model</th
-                                    >
-                                    <th
-                                        class="px-5 py-2.5 text-right font-medium"
-                                        >Requests</th
-                                    >
-                                    <th
-                                        class="px-5 py-2.5 text-right font-medium"
-                                        >Tokens in / out</th
-                                    >
-                                    <th
-                                        class="px-5 py-2.5 text-right font-medium"
-                                        >Cost</th
-                                    >
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y">
-                                {#each analytics.ai.models as row (row.feature + row.model)}
-                                    <tr class="hover:bg-muted/40">
-                                        <td
-                                            class="px-5 py-2.5 whitespace-nowrap"
-                                            >{analytics.ai.features[
-                                                row.feature
-                                            ] ?? row.feature}</td
-                                        >
-                                        <td
-                                            class="px-5 py-2.5 font-mono text-xs break-all text-muted-foreground"
-                                            >{row.model}</td
-                                        >
-                                        <td
-                                            class="px-5 py-2.5 text-right tabular-nums"
-                                            >{number(row.requests)}</td
-                                        >
-                                        <td
-                                            class="px-5 py-2.5 text-right tabular-nums whitespace-nowrap"
-                                            >{number(row.input_tokens)} / {number(
-                                                row.output_tokens,
-                                            )}</td
-                                        >
-                                        <td
-                                            class="px-5 py-2.5 text-right tabular-nums"
-                                            >{money(row.cost)}</td
-                                        >
-                                    </tr>
-                                {/each}
-                            </tbody>
-                        </table>
-                    </div>
-                {/if}
-            </AdminPanel>
         </div>
-
-        <AdminPanel
-            title="Households using AI most"
-            description="Top ten by requests in this period, including cache hits. Click a household to see its members."
-            padded={false}
-        >
-            {#if analytics.ai.households.length === 0}
-                <p class="px-5 py-8 text-center text-sm text-muted-foreground">
-                    No household has used AI assistance in this period.
-                </p>
-            {:else}
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr
-                                class="border-b text-left text-xs text-muted-foreground"
-                            >
-                                <th class="px-5 py-2.5 font-medium"
-                                    >Household</th
-                                >
-                                <th class="px-5 py-2.5 text-right font-medium"
-                                    >Requests</th
-                                >
-                                <th class="px-5 py-2.5 text-right font-medium"
-                                    >Failed</th
-                                >
-                                <th class="px-5 py-2.5 text-right font-medium"
-                                    >Members using it</th
-                                >
-                                <th class="px-5 py-2.5 text-right font-medium"
-                                    >Cost</th
-                                >
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y">
-                            {#each analytics.ai.households as row (row.household_id)}
-                                <tr class="hover:bg-muted/40">
-                                    <td class="px-5 py-2.5 font-medium">
-                                        <Link
-                                            href={usersRoute({
-                                                query: {
-                                                    household: row.household_id,
-                                                },
-                                            }).url}
-                                            class="hover:underline"
-                                            >{row.name}</Link
-                                        >
-                                    </td>
-                                    <td
-                                        class="px-5 py-2.5 text-right tabular-nums"
-                                        >{number(row.requests)}</td
-                                    >
-                                    <td
-                                        class={cn(
-                                            'px-5 py-2.5 text-right tabular-nums',
-                                            row.failed > 0 &&
-                                                'text-amber-600 dark:text-amber-400',
-                                        )}>{number(row.failed)}</td
-                                    >
-                                    <td
-                                        class="px-5 py-2.5 text-right tabular-nums"
-                                        >{number(row.users)}</td
-                                    >
-                                    <td
-                                        class="px-5 py-2.5 text-right tabular-nums"
-                                        >{money(row.cost)}</td
-                                    >
-                                </tr>
-                            {/each}
-                        </tbody>
-                    </table>
-                </div>
-            {/if}
-        </AdminPanel>
     </AdminSection>
 </AdminPage>

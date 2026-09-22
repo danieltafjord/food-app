@@ -25,6 +25,7 @@
     import StatStrip from '@/components/admin/StatStrip.svelte';
     import type { Stat } from '@/components/admin/StatStrip.svelte';
     import StatusDot from '@/components/admin/StatusDot.svelte';
+    import { theadClass, thClass } from '@/components/admin/table';
     import AppHead from '@/components/AppHead.svelte';
     import ConfirmDialog from '@/components/ConfirmDialog.svelte';
     import InputError from '@/components/InputError.svelte';
@@ -33,6 +34,11 @@
     import { Input } from '@/components/ui/input';
     import { Label } from '@/components/ui/label';
     import { cn } from '@/lib/utils';
+    import {
+        index as aiRequestsRoute,
+        show as showAiRequest,
+    } from '@/routes/admin/ai-requests';
+    import { index as apiRequestsRoute } from '@/routes/admin/api-requests';
 
     type UserRow = {
         id: number;
@@ -206,8 +212,9 @@
         });
     }
 
-    const headerClass =
-        'px-5 py-2.5 text-left text-xs font-medium text-muted-foreground';
+    const headerClass = thClass;
+    const panelLinkClass =
+        'text-xs font-medium text-muted-foreground hover:text-foreground hover:underline';
     const pillClass =
         'rounded-full border border-border/80 bg-muted/60 px-2 py-px text-[11px] font-medium text-muted-foreground';
     const statusTone: Record<AiRow['status'], 'ok' | 'danger' | 'neutral'> = {
@@ -259,8 +266,8 @@
                         </p>
                     {:else}
                         <table class="w-full text-sm">
-                            <thead>
-                                <tr class="border-b">
+                            <thead class={theadClass}>
+                                <tr>
                                     <th class={headerClass}>Household</th>
                                     <th class={headerClass}>Role</th>
                                     <th class={cn(headerClass, 'text-right')}
@@ -319,9 +326,23 @@
 
                 <AdminPanel
                     title="Recent AI requests"
-                    description="The last 20 requests. Prompts are never stored."
+                    description="The last 20 requests. Open one to see what was sent and what came back."
                     padded={false}
                 >
+                    {#snippet actions()}
+                        <Link
+                            href={aiRequestsRoute({
+                                query: { user: user.id },
+                            }).url}
+                            class={panelLinkClass}>All AI requests</Link
+                        >
+                        <Link
+                            href={apiRequestsRoute({
+                                query: { user: user.id },
+                            }).url}
+                            class={panelLinkClass}>API requests</Link
+                        >
+                    {/snippet}
                     {#if aiRequests.length === 0}
                         <p class="px-6 pb-6 text-sm text-muted-foreground">
                             No AI requests yet.
@@ -332,8 +353,8 @@
                     {:else}
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm">
-                                <thead>
-                                    <tr class="border-b">
+                                <thead class={theadClass}>
+                                    <tr>
                                         <th class={headerClass}>When</th>
                                         <th class={headerClass}>Feature</th>
                                         <th class={headerClass}>Status</th>
@@ -362,10 +383,17 @@
                                         <tr class="hover:bg-muted/40">
                                             <td
                                                 class="px-5 py-2.5 whitespace-nowrap text-muted-foreground"
-                                                >{formatDateTime(
-                                                    request.created_at,
-                                                )}</td
                                             >
+                                                <Link
+                                                    href={showAiRequest(
+                                                        request.id,
+                                                    ).url}
+                                                    class="hover:underline"
+                                                    >{formatDateTime(
+                                                        request.created_at,
+                                                    )}</Link
+                                                >
+                                            </td>
                                             <td class="px-5 py-2.5">
                                                 <span class="capitalize"
                                                     >{request.feature}</span

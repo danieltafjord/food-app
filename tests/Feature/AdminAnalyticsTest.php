@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\AiRequest;
+use App\Models\ApiRequest;
 use App\Models\Dinner;
 use App\Models\Household;
 use App\Models\ShoppingList;
@@ -25,6 +26,10 @@ test('the analytics page aggregates app and AI usage over the selected window', 
     AiRequest::factory()->failed()->for($user)->for($household)->create(['feature' => 'categorization', 'model' => 'typesafe/jev-1.13', 'created_at' => now()->subDays(2)]);
     AiRequest::factory()->for($user)->for($household)->create(['feature' => 'categorization', 'created_at' => now()->subDays(45)]);
     DB::table('ai_daily_usage')->insert(['day' => '2026-09-22', 'scope' => 'global', 'feature' => 'suggestions', 'used' => 7]);
+    ApiRequest::factory()->count(3)->for($user)->for($household)->create();
+    ApiRequest::factory()->failed(422)->for($user)->for($household)->create();
+    ApiRequest::factory()->failed()->for($user)->for($household)->create();
+    ApiRequest::factory()->failed()->for($user)->for($household)->create(['created_at' => now()->subDays(45)]);
 
     $this->actingAs($admin)
         ->get(route('admin.analytics', ['days' => 30]))
@@ -38,8 +43,6 @@ test('the analytics page aggregates app and AI usage over the selected window', 
             ->where('analytics.app.totals.new_users', 2)
             ->where('analytics.app.totals.households', 2)
             ->where('analytics.app.totals.active_households', 1)
-            ->where('analytics.app.totals.dinners', 2)
-            ->where('analytics.app.totals.shopping_lists', 1)
             ->has('analytics.app.signups', 30)
             ->where('analytics.app.signups.29', ['day' => '2026-09-22', 'value' => 2])
             ->where('analytics.ai.totals.requests', 4)
@@ -47,19 +50,12 @@ test('the analytics page aggregates app and AI usage over the selected window', 
             ->where('analytics.ai.totals.cached', 1)
             ->where('analytics.ai.totals.failed', 1)
             ->where('analytics.ai.totals.avg_duration_ms', 400)
-            ->where('analytics.ai.totals.input_tokens', 200)
-            ->where('analytics.ai.totals.output_tokens', 20)
             ->where('analytics.ai.totals.cost', 0.002)
-            ->where('analytics.ai.totals.suggestions_users', 1)
-            ->where('analytics.ai.totals.categorization_users', 0)
-            ->has('analytics.ai.daily.suggestions', 30)
-            ->where('analytics.ai.daily.suggestions.29', ['day' => '2026-09-22', 'ok' => 2, 'cached' => 1, 'failed' => 0])
-            ->where('analytics.ai.daily.categorization.27', ['day' => '2026-09-20', 'ok' => 0, 'cached' => 0, 'failed' => 1])
-            ->where('analytics.ai.models.0.model', 'google/gemini-3.5-flash-lite')
-            ->where('analytics.ai.models.0.requests', 3)
+            ->has('analytics.ai.daily', 30)
+            ->where('analytics.ai.daily.29', ['day' => '2026-09-22', 'ok' => 2, 'cached' => 1, 'failed' => 0])
+            ->where('analytics.ai.daily.27', ['day' => '2026-09-20', 'ok' => 0, 'cached' => 0, 'failed' => 1])
             ->where('analytics.ai.today.1', ['feature' => 'suggestions', 'used' => 7, 'limit' => config('assistance.limits.suggestions.global')])
-            ->has('analytics.ai.households', 1)
-            ->where('analytics.ai.households.0', ['household_id' => $household->id, 'name' => $household->name, 'requests' => 4, 'failed' => 1, 'users' => 1, 'cost' => 0.002])
+            ->where('analytics.api', ['requests' => 5, 'client_errors' => 1, 'server_errors' => 1])
             ->where('cacheSeconds', 300)
             ->has('generatedAt')
         );

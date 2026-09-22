@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
     ->name('api.v1.')
-    ->middleware(['auth:api', 'api.app-only', 'throttle:api', 'api.transaction'])
+    ->middleware(['api.log:app', 'auth:api', 'api.app-only', 'throttle:api', 'api.transaction'])
     ->group(function () {
         // Authenticated user + token management
         Route::get('me', [MeController::class, 'show'])->name('me');
@@ -97,7 +97,7 @@ Route::prefix('v1')
  */
 Route::prefix('public/v1')
     ->name('api.public.v1.')
-    ->middleware(['auth:api', 'throttle:public-api', 'api.transaction', 'api.token'])
+    ->middleware(['api.log:public', 'auth:api', 'throttle:public-api', 'api.transaction', 'api.token'])
     ->group(function () {
         Route::get('me', PublicMeController::class)->name('me');
         Route::get('today', TodayController::class)->name('today');
@@ -120,7 +120,7 @@ Route::prefix('public/v1')
 
 // AI calls never hold the API write transaction across provider requests.
 Route::prefix('v1/ai')->name('api.v1.ai.')
-    ->middleware(['auth:api', 'api.app-only', 'throttle:api', 'household.active'])
+    ->middleware(['api.log:app', 'auth:api', 'api.app-only', 'throttle:api', 'household.active'])
     ->group(function () {
         Route::get('settings', [AiController::class, 'settings'])->name('settings');
         Route::patch('settings', [AiController::class, 'updateSettings'])->name('settings.update');

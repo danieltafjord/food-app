@@ -1,0 +1,116 @@
+[
+    {
+        "id": "nb-compound",
+        "feature": "categorization",
+        "input": { "name": "kyllinglårfilet", "locale": "nb" },
+        "expected": ["meat"]
+    },
+    {
+        "id": "en-frozen",
+        "feature": "categorization",
+        "input": { "name": "frozen peas", "locale": "en" },
+        "expected": ["frozen"]
+    },
+    {
+        "id": "nb-frozen",
+        "feature": "categorization",
+        "input": { "name": "frosne jordbær", "locale": "nb" },
+        "expected": ["frozen"]
+    },
+    {
+        "id": "nb-ambiguous",
+        "feature": "categorization",
+        "input": { "name": "ting", "locale": "nb" },
+        "expected": [null]
+    },
+    {
+        "id": "en-pet",
+        "feature": "categorization",
+        "input": { "name": "cat litter", "locale": "en" },
+        "expected": ["pets"]
+    },
+    {
+        "id": "nb-baby",
+        "feature": "categorization",
+        "input": { "name": "bleier", "locale": "nb" },
+        "expected": ["baby"]
+    },
+    {
+        "id": "en-unclear",
+        "feature": "suggestions",
+        "input": {
+            "name": "Quarterly planning meeting",
+            "ingredients": [],
+            "locale": "en",
+            "catalogue": []
+        },
+        "acceptable": [],
+        "minimum": 0
+    },
+    {
+        "id": "nb-unclear",
+        "feature": "suggestions",
+        "input": {
+            "name": "Regnskapsmøte",
+            "ingredients": [],
+            "locale": "nb",
+            "catalogue": []
+        },
+        "acceptable": [],
+        "minimum": 0
+    },
+    {
+        "id": "en-tacos",
+        "feature": "suggestions",
+        "input": {
+            "name": "Tacos",
+            "ingredients": ["Tortillas", "minced beef", "tomato", "lettuce"],
+            "locale": "en",
+            "catalogue": [
+                "Cheddar",
+                "Red onion",
+                "Sour cream",
+                "Avocado",
+                "Lime"
+            ]
+        },
+        "acceptable": [
+            "cheddar",
+            "cheese",
+            "red onion",
+            "onion",
+            "sour cream",
+            "avocado",
+            "lime",
+            "salsa",
+            "coriander",
+            "cilantro",
+            "taco seasoning"
+        ],
+        "minimum": 1
+    },
+    {
+        "id": "nb-taco",
+        "feature": "suggestions",
+        "input": {
+            "name": "Taco",
+            "ingredients": ["tortilla", "kjøttdeig", "tomat", "salat"],
+            "locale": "nb",
+            "catalogue": ["Rødløk", "Rømme", "Revet ost", "Avokado", "Lime"]
+        },
+        "acceptable": [
+            "rødløk",
+            "løk",
+            "rømme",
+            "revet ost",
+            "ost",
+            "avokado",
+            "lime",
+            "salsa",
+            "koriander",
+            "tacokrydder",
+            "mais"
+        ],
+        "minimum": 1
+    }
+]

@@ -6,8 +6,10 @@ use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\LogApiRequest;
 use App\Http\Middleware\RejectApiTokens;
 use App\Http\Middleware\WrapWritesInTransaction;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -39,10 +41,16 @@ return Application::configure(basePath: dirname(__DIR__))
             EnsureUserIsActive::class.':api',
         ]);
 
+        // Log API requests before authentication so rejected calls (401, 403,
+        // 429) are captured too; the priority list would otherwise move
+        // `auth` ahead of the logger.
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, LogApiRequest::class);
+
         $middleware->alias([
             'household.active' => EnsureActiveHousehold::class,
             'api.transaction' => WrapWritesInTransaction::class,
             'api.token' => AuthenticateApiToken::class,
+            'api.log' => LogApiRequest::class,
             'api.app-only' => RejectApiTokens::class,
             'admin' => EnsureUserIsAdmin::class,
             'active' => EnsureUserIsActive::class,
@@ -50,6 +58,6 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*', 'mcp'),
+            fn (Request $request) => $request->is('api/*', 'mcp') || ($request->is('admin/ai/test') && $request->expectsJson()),
         );
     })->create();

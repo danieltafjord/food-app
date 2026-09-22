@@ -6,6 +6,7 @@ use App\Actions\Admin\DeactivateUser;
 use App\Actions\Admin\RecordAdminAction;
 use App\Actions\ApiTokens\ListApiTokens;
 use App\Actions\Users\DeleteAccount;
+use App\Concerns\SortsAndPaginates;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UserUpdateRequest;
 use App\Models\AdminAction;
@@ -22,6 +23,8 @@ use Inertia\Response;
 
 class UserController extends Controller
 {
+    use SortsAndPaginates;
+
     /** @var array<string, string> sort key => column */
     private const SORTS = ['joined' => 'users.created_at', 'name' => 'users.name', 'households' => 'households_count'];
 
@@ -33,9 +36,7 @@ class UserController extends Controller
         $search = trim((string) $request->query('search', ''));
         $status = (string) $request->query('status', 'all');
         $householdId = (int) $request->query('household', 0);
-        $sort = (string) $request->query('sort', 'joined');
-        $sort = array_key_exists($sort, self::SORTS) ? $sort : 'joined';
-        $direction = $request->query('direction') === 'asc' ? 'asc' : 'desc';
+        [$sort, $direction] = $this->sorting($request, self::SORTS, 'joined');
 
         $users = User::query()
             ->withCount('households')
@@ -55,7 +56,7 @@ class UserController extends Controller
             ->when($householdId > 0, fn ($query) => $query->whereHas('households', fn ($query) => $query->where('households.id', $householdId)))
             ->orderBy(self::SORTS[$sort], $direction)
             ->orderBy('users.id', 'desc')
-            ->paginate(25)
+            ->paginate($this->perPage($request, 25))
             ->withQueryString()
             ->through(fn (User $user) => self::row($user));
 
@@ -69,7 +70,9 @@ class UserController extends Controller
                 'household' => $household ? ['id' => $household->id, 'name' => $household->name] : null,
                 'sort' => $sort,
                 'direction' => $direction,
+                'per_page' => $users->perPage(),
             ],
+            'pageSizes' => self::pageSizes(),
         ]);
     }
 

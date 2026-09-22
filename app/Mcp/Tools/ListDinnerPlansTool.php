@@ -2,7 +2,6 @@
 
 namespace App\Mcp\Tools;
 
-use App\Data\DinnerPlanData;
 use App\Models\DinnerPlan;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -11,30 +10,19 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('List the household\'s dinner plans with their scheduled entries, newest first.')]
+#[Description('List dinner plan summaries. Use get-dinner-plan-tool for scheduled entries. Results are ordered by id; follow next_cursor for more.')]
 #[IsReadOnly]
-class ListDinnerPlansTool extends HouseholdTool
+class ListDinnerPlansTool extends PaginatedHouseholdTool
 {
     public function handle(Request $request): Response
     {
-        $plans = $this->household()->dinnerPlans()
-            ->with('entries.dinner')
-            ->latest('start_date')
-            ->get()
-            ->map(fn (DinnerPlan $plan) => DinnerPlanData::fromPlan($plan)->toArray());
-
-        return Response::json($plans->all());
+        return Response::json($this->page($request, $this->household()->dinnerPlans()->withCount('entries'),
+            fn (DinnerPlan $row) => ['id' => $row->id, 'name' => $row->name, 'start_date' => $row->start_date?->toDateString(), 'end_date' => $row->end_date?->toDateString(), 'entry_count' => $row->entries_count]));
     }
 
-    /**
-     * Get the tool's input schema.
-     *
-     * @return array<string, Type>
-     */
+    /** @return array<string, Type> */
     public function schema(JsonSchema $schema): array
     {
-        return [
-
-        ];
+        return $this->pageSchema($schema);
     }
 }

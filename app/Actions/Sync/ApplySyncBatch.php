@@ -459,6 +459,15 @@ class ApplySyncBatch
         if ($model !== null) {
             $state->remember($key, $uuid, $model->getKey());
             if ($this->serverIsNewer($model, $incomingUpdatedAt)) {
+                // A human correction wins over automatic enrichment even when
+                // the other device finished inference after the correction.
+                if ($key === 'ingredients' && ! $model->trashed() && ($row['category_source'] ?? null) === 'user'
+                    && in_array($model->category_source, ['ai', 'dictionary'], true)
+                    && array_key_exists('category', $row)) {
+                    $model->forceFill(['category' => $row['category'], 'category_source' => 'user'])
+                        ->attributeContentTo($userId)->stampSync($state->version(), $now);
+                    Model::withoutTimestamps(fn () => $model->save());
+                }
                 // Keep the server copy and send it back so the client converges.
                 $state->include($key, $uuid);
 
@@ -493,6 +502,11 @@ class ApplySyncBatch
         }
         if ($key === 'ingredients' && $model->exists && array_key_exists('category', $row)
             && ! array_key_exists('category_source', $row) && $row['category'] !== $model->category) {
+            $attributes['category_source'] = 'user';
+        }
+        if ($key === 'ingredients' && $model->exists && $model->category_source === 'user'
+            && in_array($row['category_source'] ?? null, ['ai', 'dictionary'], true)) {
+            $attributes['category'] = $model->category;
             $attributes['category_source'] = 'user';
         }
         if ($resource['hasHousehold']) {

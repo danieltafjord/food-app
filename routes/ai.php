@@ -12,4 +12,4 @@ use Laravel\Mcp\Facades\Mcp;
 Mcp::oauthRoutes();
 
 Mcp::web('/mcp', HandlelistaServer::class)
-    ->middleware(['auth:api', 'active:api', 'throttle:public-api', 'api.transaction', 'api.token:tools']);
+    ->middleware(['api.log:mcp', 'auth:api', 'active:api', 'throttle:public-api', 'api.transaction', 'api.token:tools']);

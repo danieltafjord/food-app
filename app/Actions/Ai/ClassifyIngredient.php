@@ -32,12 +32,13 @@ class ClassifyIngredient
 
     public function __construct(private AiConfiguration $configuration) {}
 
-    public function handle(string $name, string $locale): AiResult
+    /** @param  string|null  $model  Overrides the configured model, used by the admin test button. */
+    public function handle(string $name, string $locale, ?string $model = null): AiResult
     {
         $response = Http::withToken(config('ai.providers.openrouter.key'))
             ->acceptJson()->connectTimeout(3)->timeout(12)
             ->post('https://openrouter.ai/api/v1/systemone', [
-                'model' => $this->configuration->model('categorization'),
+                'model' => $model ?? $this->configuration->model('categorization'),
                 'state' => ['ingredient' => $name, 'locale' => $locale],
                 'questions' => ['category' => [
                     'type' => 'choice',
@@ -60,6 +61,7 @@ class ClassifyIngredient
             (int) $response->json('usage.input_tokens', 0),
             (int) $response->json('usage.output_tokens', 0),
             (float) $response->json('usage.cost', 0),
+            ['answers' => $response->json('answers'), 'usage' => $response->json('usage')],
         );
     }
 }

@@ -20,16 +20,26 @@
 
 <script lang="ts">
     import { Link, page, router, useForm } from '@inertiajs/svelte';
-    import ArrowDown from 'lucide-svelte/icons/arrow-down';
-    import ArrowUp from 'lucide-svelte/icons/arrow-up';
     import Ellipsis from 'lucide-svelte/icons/ellipsis';
-    import Search from 'lucide-svelte/icons/search';
-    import X from 'lucide-svelte/icons/x';
     import UserController from '@/actions/App/Http/Controllers/Admin/UserController';
     import AdminPage from '@/components/admin/AdminPage.svelte';
     import AdminPanel from '@/components/admin/AdminPanel.svelte';
+    import FilterChip from '@/components/admin/FilterChip.svelte';
+    import PaginationFooter from '@/components/admin/PaginationFooter.svelte';
+    import type { Paginator } from '@/components/admin/PaginationFooter.svelte';
+    import SearchField from '@/components/admin/SearchField.svelte';
     import SegmentedControl from '@/components/admin/SegmentedControl.svelte';
+    import SortHeader from '@/components/admin/SortHeader.svelte';
+    import type { SortDirection } from '@/components/admin/SortHeader.svelte';
     import StatusDot from '@/components/admin/StatusDot.svelte';
+    import {
+        numericClass,
+        rowClass,
+        tdClass,
+        thClass,
+        theadClass,
+    } from '@/components/admin/table';
+    import TableEmpty from '@/components/admin/TableEmpty.svelte';
     import AppHead from '@/components/AppHead.svelte';
     import ConfirmDialog from '@/components/ConfirmDialog.svelte';
     import InputError from '@/components/InputError.svelte';
@@ -74,26 +84,18 @@
         status: string;
         household: { id: number; name: string } | null;
         sort: 'joined' | 'name' | 'households';
-        direction: 'asc' | 'desc';
-    };
-
-    type Paginated = {
-        data: UserRow[];
-        current_page: number;
-        last_page: number;
-        total: number;
-        from: number | null;
-        to: number | null;
-        prev_page_url: string | null;
-        next_page_url: string | null;
+        direction: SortDirection;
+        per_page: number;
     };
 
     let {
         users,
         filters,
+        pageSizes,
     }: {
-        users: Paginated;
+        users: Paginator & { data: UserRow[] };
         filters: Filters;
+        pageSizes: number[];
     } = $props();
 
     const statuses = [
@@ -109,7 +111,12 @@
 
     // svelte-ignore state_referenced_locally
     let search = $state(filters.search);
-    let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const isFiltered = $derived(
+        filters.search !== '' ||
+            filters.status !== 'all' ||
+            filters.household !== null,
+    );
 
     function applyFilters(
         next: Partial<{
@@ -117,7 +124,8 @@
             status: string;
             household: number | null;
             sort: Filters['sort'];
-            direction: Filters['direction'];
+            direction: SortDirection;
+            per_page: number;
         }>,
     ) {
         const query: Record<string, string> = {};
@@ -129,6 +137,7 @@
                 : next.household;
         const nextSort = next.sort ?? filters.sort;
         const nextDirection = next.direction ?? filters.direction;
+        const nextPerPage = next.per_page ?? filters.per_page;
 
         if (nextSearch.trim() !== '') {
             query.search = nextSearch.trim();
@@ -147,6 +156,10 @@
             query.direction = nextDirection;
         }
 
+        if (nextPerPage !== pageSizes[0]) {
+            query.per_page = String(nextPerPage);
+        }
+
         router.get(usersRoute({ query }).url, undefined, {
             preserveState: true,
             preserveScroll: true,
@@ -155,21 +168,22 @@
         });
     }
 
-    function onSearchInput() {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => applyFilters({ search }), 300);
+    function clearFilters() {
+        search = '';
+        applyFilters({ search: '', status: 'all', household: null });
     }
 
-    function sortBy(column: Filters['sort']) {
-        const direction =
-            filters.sort === column
+    function sortBy(column: string) {
+        const sort = column as Filters['sort'];
+        const direction: SortDirection =
+            filters.sort === sort
                 ? filters.direction === 'asc'
                     ? 'desc'
                     : 'asc'
-                : column === 'name'
+                : sort === 'name'
                   ? 'asc'
                   : 'desc';
-        applyFilters({ sort: column, direction });
+        applyFilters({ sort, direction });
     }
 
     const formatDate = (value: string | null) =>
@@ -268,78 +282,11 @@
         });
     }
 
-    const headerClass = 'px-5 py-2.5 text-left text-xs font-medium';
     const pillClass =
         'rounded-full border border-border/80 bg-muted/60 px-2 py-px text-[11px] font-medium text-muted-foreground';
 </script>
 
 <AppHead title="Users" />
-
-{#snippet sortHeader(column: Filters['sort'], label: string)}
-    {@const active = filters.sort === column}
-    <button
-        type="button"
-        class={cn(
-            'inline-flex items-center gap-1 hover:text-foreground',
-            active && 'text-foreground',
-        )}
-        onclick={() => sortBy(column)}
-        aria-sort={active
-            ? filters.direction === 'asc'
-                ? 'ascending'
-                : 'descending'
-            : undefined}
-    >
-        {label}
-        {#if active}
-            {#if filters.direction === 'asc'}
-                <ArrowUp class="size-3" />
-            {:else}
-                <ArrowDown class="size-3" />
-            {/if}
-        {/if}
-    </button>
-{/snippet}
-
-{#snippet pagination()}
-    <p class="text-xs text-muted-foreground tabular-nums">
-        Showing {users.from ?? 0}–{users.to ?? 0} of {users.total}
-    </p>
-    <div class="flex gap-2">
-        {#if users.prev_page_url}
-            <Button
-                variant="outline"
-                size="sm"
-                class="rounded-full px-4 shadow-none"
-                asChild
-            >
-                {#snippet children(props)}
-                    <Link
-                        href={users.prev_page_url ?? ''}
-                        class={props.class}
-                        preserveScroll>Previous</Link
-                    >
-                {/snippet}
-            </Button>
-        {/if}
-        {#if users.next_page_url}
-            <Button
-                variant="outline"
-                size="sm"
-                class="rounded-full px-4 shadow-none"
-                asChild
-            >
-                {#snippet children(props)}
-                    <Link
-                        href={users.next_page_url ?? ''}
-                        class={props.class}
-                        preserveScroll>Next</Link
-                    >
-                {/snippet}
-            </Button>
-        {/if}
-    </div>
-{/snippet}
 
 <AdminPage
     title="Users"
@@ -353,20 +300,13 @@
     {/snippet}
 
     <div class="flex flex-col gap-4">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div class="relative w-full sm:max-w-xs">
-                <Search
-                    class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                    type="search"
-                    placeholder="Search name or e-mail"
-                    class="h-10 rounded-full bg-panel pl-10 pr-4 shadow-none"
-                    bind:value={search}
-                    oninput={onSearchInput}
-                    aria-label="Search users"
-                />
-            </div>
+        <div class="flex flex-wrap items-center gap-3">
+            <SearchField
+                bind:value={search}
+                placeholder="Name, e-mail or #id"
+                label="Search users"
+                onSearch={(value) => applyFilters({ search: value })}
+            />
             <SegmentedControl
                 segments={statuses}
                 value={filters.status}
@@ -374,69 +314,77 @@
                 onSelect={(value) => applyFilters({ status: String(value) })}
             />
             {#if filters.household}
-                <button
-                    type="button"
-                    class="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-panel px-3 py-1.5 text-xs font-medium"
-                    onclick={() => applyFilters({ household: null })}
-                    aria-label="Stop filtering by household {filters.household
-                        .name}"
-                >
-                    Household: {filters.household.name}
-                    <X class="size-3.5 text-muted-foreground" />
-                </button>
+                <FilterChip
+                    label="Household"
+                    value={filters.household.name}
+                    onRemove={() => applyFilters({ household: null })}
+                />
             {/if}
         </div>
 
         <AdminPanel
             padded={false}
-            footer={users.last_page > 1 ? pagination : undefined}
+            footer={users.total > 0 ? pagination : undefined}
         >
             <div class="overflow-x-auto md:overflow-visible">
                 <table class="w-full text-sm">
-                    <thead>
-                        <tr class="border-b text-muted-foreground">
-                            <th class={headerClass}>
-                                {@render sortHeader('name', 'User')}
-                            </th>
-                            <th class={headerClass}>Status</th>
-                            <th class={cn(headerClass, 'text-right')}>
-                                {@render sortHeader('households', 'Households')}
-                            </th>
-                            <th class={cn(headerClass, 'hidden lg:table-cell')}
+                    <thead class={theadClass}>
+                        <tr>
+                            <SortHeader
+                                column="name"
+                                label="User"
+                                sort={filters.sort}
+                                direction={filters.direction}
+                                onSort={sortBy}
+                            />
+                            <th class={thClass}>Status</th>
+                            <SortHeader
+                                column="households"
+                                label="Households"
+                                align="right"
+                                sort={filters.sort}
+                                direction={filters.direction}
+                                onSort={sortBy}
+                            />
+                            <th class={cn(thClass, 'hidden lg:table-cell')}
                                 >AI assistance</th
                             >
-                            <th class={cn(headerClass, 'hidden lg:table-cell')}>
-                                {@render sortHeader('joined', 'Joined')}
-                            </th>
-                            <th class={headerClass}>
+                            <SortHeader
+                                column="joined"
+                                label="Joined"
+                                class="hidden lg:table-cell"
+                                sort={filters.sort}
+                                direction={filters.direction}
+                                onSort={sortBy}
+                            />
+                            <th class={thClass}>
                                 <span class="sr-only">Actions</span>
                             </th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y">
+                    <tbody class="divide-y divide-border/60">
                         {#if users.data.length === 0}
-                            <tr>
-                                <td
-                                    colspan="6"
-                                    class="px-5 py-12 text-center text-muted-foreground"
-                                >
-                                    No accounts match this search. Try a
-                                    different name, e-mail or status.
-                                </td>
-                            </tr>
+                            <TableEmpty
+                                colspan={6}
+                                message={isFiltered
+                                    ? 'No accounts match this search. Try a different name, e-mail or status.'
+                                    : 'No accounts yet.'}
+                                filtered={isFiltered}
+                                onClear={clearFilters}
+                            />
                         {/if}
                         {#each users.data as user (user.id)}
                             {@const isSelf = user.id === currentUserId}
                             {@const busy = busyId === user.id}
                             <tr
                                 class={cn(
-                                    'transition-colors hover:bg-muted/40',
+                                    rowClass,
                                     user.deactivated_at &&
                                         'text-muted-foreground',
                                     busy && 'opacity-50',
                                 )}
                             >
-                                <td class="px-5 py-3">
+                                <td class={tdClass}>
                                     <div class="flex items-center gap-3">
                                         <span
                                             class={cn(
@@ -472,7 +420,7 @@
                                         </div>
                                     </div>
                                 </td>
-                                <td class="px-5 py-3">
+                                <td class={tdClass}>
                                     <div
                                         class="flex flex-wrap items-center gap-x-3 gap-y-1"
                                     >
@@ -497,16 +445,22 @@
                                         {/if}
                                     </div>
                                 </td>
-                                <td class="px-5 py-3 text-right tabular-nums">
+                                <td class={cn(tdClass, numericClass)}>
                                     {user.households_count}
                                 </td>
                                 <td
-                                    class="hidden px-5 py-3 text-muted-foreground lg:table-cell"
+                                    class={cn(
+                                        tdClass,
+                                        'hidden text-muted-foreground lg:table-cell',
+                                    )}
                                 >
                                     {aiSummary(user)}
                                 </td>
                                 <td
-                                    class="hidden px-5 py-3 whitespace-nowrap text-muted-foreground lg:table-cell"
+                                    class={cn(
+                                        tdClass,
+                                        'hidden whitespace-nowrap text-muted-foreground lg:table-cell',
+                                    )}
                                 >
                                     {formatDate(user.created_at)}
                                 </td>
@@ -757,3 +711,11 @@
         }
     }}
 />
+
+{#snippet pagination()}
+    <PaginationFooter
+        paginator={users}
+        {pageSizes}
+        onPageSize={(perPage) => applyFilters({ per_page: perPage })}
+    />
+{/snippet}

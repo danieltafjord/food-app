@@ -1,10 +1,12 @@
 <script lang="ts">
     import { Link, page } from '@inertiajs/svelte';
+    import Activity from 'lucide-svelte/icons/activity';
     import BookOpen from 'lucide-svelte/icons/book-open';
     import BrainCircuit from 'lucide-svelte/icons/brain-circuit';
     import ChartColumn from 'lucide-svelte/icons/chart-column';
     import KeyRound from 'lucide-svelte/icons/key-round';
     import LayoutGrid from 'lucide-svelte/icons/layout-grid';
+    import Sparkles from 'lucide-svelte/icons/sparkles';
     import Users from 'lucide-svelte/icons/users';
     import type { Snippet } from 'svelte';
     import AppLogo from '@/components/AppLogo.svelte';
@@ -24,6 +26,8 @@
     import { dashboard } from '@/routes';
     import { analytics } from '@/routes/admin';
     import { edit as aiSettings } from '@/routes/admin/ai';
+    import { index as adminAiRequests } from '@/routes/admin/ai-requests';
+    import { index as adminApiRequests } from '@/routes/admin/api-requests';
     import { index as adminUsers } from '@/routes/admin/users';
     import { index as apiTokens } from '@/routes/api-tokens';
     import { ui as apiDocs } from '@/routes/scramble/docs';
@@ -63,6 +67,16 @@
             title: 'AI models',
             href: aiSettings(),
             icon: BrainCircuit,
+        },
+        {
+            title: 'AI requests',
+            href: adminAiRequests(),
+            icon: Sparkles,
+        },
+        {
+            title: 'API requests',
+            href: adminApiRequests(),
+            icon: Activity,
         },
     ];
 
