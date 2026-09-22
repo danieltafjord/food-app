@@ -121,7 +121,7 @@
 </script>
 
 <Dialog bind:open={isOpen}>
-    <DialogContent class="sm:max-w-md">
+    <DialogContent class="rounded-3xl sm:max-w-md">
         <div class="flex flex-col items-center justify-center">
             <div
                 class="mb-3 w-auto rounded-full border border-border bg-card p-0.5 shadow-sm"
@@ -165,7 +165,7 @@
                         class="relative mx-auto flex max-w-md items-center overflow-hidden"
                     >
                         <div
-                            class="relative mx-auto aspect-square w-64 overflow-hidden rounded-lg border border-border"
+                            class="relative mx-auto aspect-square w-64 overflow-hidden rounded-2xl border border-border"
                         >
                             {#if !twoFactorAuth.state.qrCodeSvg}
                                 <div
@@ -195,7 +195,10 @@
                     </div>
 
                     <div class="flex w-full items-center space-x-5">
-                        <Button class="w-full" onclick={handleModalNextStep}>
+                        <Button
+                            class="w-full rounded-full"
+                            onclick={handleModalNextStep}
+                        >
                             {modalConfig.buttonText}
                         </Button>
                     </div>
@@ -215,7 +218,7 @@
                         class="flex w-full items-center justify-center space-x-2"
                     >
                         <div
-                            class="flex w-full items-stretch overflow-hidden rounded-xl border border-border"
+                            class="flex w-full items-stretch overflow-hidden rounded-2xl border border-border"
                         >
                             {#if !twoFactorAuth.state.manualSetupKey}
                                 <div
@@ -288,7 +291,7 @@
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    class="w-auto flex-1"
+                                    class="w-auto flex-1 rounded-full shadow-none"
                                     onclick={() =>
                                         (showVerificationStep = false)}
                                     disabled={processing}
@@ -297,7 +300,7 @@
                                 </Button>
                                 <Button
                                     type="submit"
-                                    class="w-auto flex-1"
+                                    class="w-auto flex-1 rounded-full shadow-none"
                                     disabled={processing || code.length < 6}
                                 >
                                     Confirm

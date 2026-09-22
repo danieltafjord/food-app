@@ -34,7 +34,7 @@
 <div class="flex items-center justify-between border-b p-4 last:border-b-0">
     <div class="flex items-center gap-4">
         <div
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted"
         >
             <KeyRound class="h-5 w-5 text-muted-foreground" />
         </div>
@@ -43,7 +43,7 @@
                 <p class="font-medium tracking-tight">{passkey.name}</p>
                 {#if passkey.authenticator}
                     <span
-                        class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground ring-1 ring-inset ring-border"
+                        class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground ring-1 ring-inset ring-border"
                     >
                         {passkey.authenticator}
                     </span>
@@ -65,7 +65,7 @@
                 <Button
                     variant="ghost"
                     size="sm"
-                    class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    class="rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onclick={props.onClick}
                 >
                     <Trash2 class="h-4 w-4" />
@@ -74,7 +74,7 @@
             {/snippet}
         </DialogTrigger>
 
-        <DialogContent>
+        <DialogContent class="rounded-3xl">
             <DialogTitle>Remove passkey</DialogTitle>
             <DialogDescription>
                 Are you sure you want to remove the "{passkey.name}" passkey?
@@ -83,13 +83,18 @@
             <DialogFooter>
                 <DialogClose asChild>
                     {#snippet children(props)}
-                        <Button variant="secondary" onclick={props.onClick}>
+                        <Button
+                            variant="secondary"
+                            class="rounded-full shadow-none"
+                            onclick={props.onClick}
+                        >
                             Cancel
                         </Button>
                     {/snippet}
                 </DialogClose>
                 <Button
                     variant="destructive"
+                    class="rounded-full"
                     disabled={isDeleting}
                     onclick={handleDelete}
                 >

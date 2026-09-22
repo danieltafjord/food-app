@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Ai\AiResult;
 use App\Actions\Ai\RunAiRequest;
 use App\Actions\Ai\SuggestDinnerIngredients;
 use App\Actions\ApiTokens\CreateApiToken;
@@ -389,14 +390,14 @@ it('coalesces identical in-flight requests without reserving twice', function ()
             $runner->handle($user, $household, 'categorization', $context, function () use (&$calls) {
                 $calls++;
 
-                return ['category' => 'meat'];
+                return new AiResult(['category' => 'meat']);
             });
             test()->fail('A duplicate request should not run while inference is in flight.');
         } catch (HttpResponseException $exception) {
             expect($exception->getResponse()->getStatusCode())->toBe(429);
         }
 
-        return ['category' => 'produce'];
+        return new AiResult(['category' => 'produce']);
     });
 
     expect($result)->toBe(['category' => 'produce']);

@@ -24,7 +24,7 @@
         description="Permanently delete your account"
     />
     <div
-        class="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10"
+        class="space-y-4 rounded-2xl border border-red-100 bg-red-50 p-5 dark:border-red-200/10 dark:bg-red-700/10"
     >
         <div class="relative space-y-0.5 text-red-600 dark:text-red-100">
             <p class="font-medium">Warning</p>
@@ -34,11 +34,13 @@
         </div>
         <Dialog>
             <DialogTrigger>
-                <Button variant="destructive" data-test="delete-user-button"
-                    >Delete account</Button
+                <Button
+                    variant="destructive"
+                    class="rounded-full"
+                    data-test="delete-user-button">Delete account</Button
                 >
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent class="rounded-3xl">
                 <Form
                     {...ProfileController.destroy.form()}
                     class="space-y-6"
@@ -69,18 +71,24 @@
                                 id="password"
                                 name="password"
                                 placeholder="Password"
+                                class="h-10 rounded-full px-4 shadow-none"
                             />
                             <InputError message={errors.password} />
                         </div>
 
                         <DialogFooter class="gap-2">
                             <DialogClose>
-                                <Button variant="secondary">Cancel</Button>
+                                <Button
+                                    variant="secondary"
+                                    class="rounded-full shadow-none"
+                                    >Cancel</Button
+                                >
                             </DialogClose>
 
                             <Button
                                 type="submit"
                                 variant="destructive"
+                                class="rounded-full"
                                 disabled={processing}
                                 data-test="confirm-delete-user-button"
                             >

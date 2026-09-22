@@ -34,7 +34,7 @@
             description="Manage your passkeys for passwordless sign-in"
         />
 
-        <div class="overflow-hidden rounded-lg border border-border">
+        <div class="overflow-hidden rounded-2xl border border-border/80">
             {#if passkeys.length > 0}
                 {#each passkeys as passkey (passkey.id)}
                     <PasskeyItem {passkey} onDelete={handleDelete} />

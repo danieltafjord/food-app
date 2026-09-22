@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AppLocale;
 use App\Models\User;
 
 test('profile page is displayed', function () {
@@ -31,6 +32,24 @@ test('profile information can be updated', function () {
     expect($user->name)->toBe('Test User');
     expect($user->email)->toBe('test@example.com');
     expect($user->email_verified_at)->toBeNull();
+});
+
+test('the language can be changed from the profile page', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('profile.edit'))
+        ->assertInertia(fn ($page) => $page->where('locales', [['value' => 'en', 'label' => 'English'], ['value' => 'nb', 'label' => 'Norsk']]));
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), ['name' => $user->name, 'email' => $user->email, 'locale' => 'nb'])
+        ->assertSessionHasNoErrors();
+    expect($user->refresh()->locale)->toBe(AppLocale::Norwegian);
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), ['name' => $user->name, 'email' => $user->email, 'locale' => 'de'])
+        ->assertSessionHasErrors(['locale']);
+    expect($user->refresh()->locale)->toBe(AppLocale::Norwegian);
 });
 
 test('email verification status is unchanged when the email address is unchanged', function () {

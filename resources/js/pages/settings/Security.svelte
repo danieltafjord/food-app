@@ -62,7 +62,7 @@
                 <PasswordInput
                     id="current_password"
                     name="current_password"
-                    class="mt-1 block w-full"
+                    class="mt-1 block h-10 w-full rounded-full px-4 shadow-none"
                     autocomplete="current-password"
                     placeholder="Current password"
                 />
@@ -74,7 +74,7 @@
                 <PasswordInput
                     id="password"
                     name="password"
-                    class="mt-1 block w-full"
+                    class="mt-1 block h-10 w-full rounded-full px-4 shadow-none"
                     autocomplete="new-password"
                     placeholder="New password"
                     passwordrules={passwordRules}
@@ -87,7 +87,7 @@
                 <PasswordInput
                     id="password_confirmation"
                     name="password_confirmation"
-                    class="mt-1 block w-full"
+                    class="mt-1 block h-10 w-full rounded-full px-4 shadow-none"
                     autocomplete="new-password"
                     placeholder="Confirm password"
                     passwordrules={passwordRules}
@@ -98,6 +98,7 @@
             <div class="flex items-center gap-4">
                 <Button
                     type="submit"
+                    class="rounded-full"
                     disabled={processing}
                     data-test="update-password-button"
                 >

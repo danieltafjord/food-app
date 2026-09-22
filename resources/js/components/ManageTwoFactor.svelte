@@ -45,7 +45,10 @@
 
                 <div>
                     {#if twoFactorAuth.hasSetupData()}
-                        <Button onclick={() => (showSetupModal = true)}>
+                        <Button
+                            class="rounded-full"
+                            onclick={() => (showSetupModal = true)}
+                        >
                             <ShieldCheck class="size-4" />Continue setup
                         </Button>
                     {:else}
@@ -54,7 +57,11 @@
                             onSuccess={() => (showSetupModal = true)}
                         >
                             {#snippet children({ processing })}
-                                <Button type="submit" disabled={processing}>
+                                <Button
+                                    type="submit"
+                                    class="rounded-full"
+                                    disabled={processing}
+                                >
                                     Enable 2FA
                                 </Button>
                             {/snippet}
@@ -76,6 +83,7 @@
                             <Button
                                 variant="destructive"
                                 type="submit"
+                                class="rounded-full"
                                 disabled={processing}
                             >
                                 Disable 2FA

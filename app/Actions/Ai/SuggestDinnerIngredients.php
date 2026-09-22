@@ -18,10 +18,17 @@ class SuggestDinnerIngredients implements Agent, HasProviderOptions, HasStructur
 {
     use Promptable;
 
+    public function __construct(private AiConfiguration $configuration) {}
+
     /** @return array<string, mixed> */
     public function providerOptions(Lab|string $provider): array
     {
-        return ['reasoning' => ['effort' => 'minimal'], 'provider' => ['require_parameters' => true]];
+        $options = ['provider' => ['require_parameters' => true]];
+        if ($effort = $this->configuration->reasoningEffort('suggestions')) {
+            $options['reasoning'] = ['effort' => $effort->value];
+        }
+
+        return $options;
     }
 
     public function instructions(): string

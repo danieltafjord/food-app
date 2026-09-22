@@ -2,6 +2,8 @@
 
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Http\Middleware\EnsureActiveHousehold;
+use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RejectApiTokens;
@@ -27,9 +29,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
         $middleware->web(append: [
+            EnsureUserIsActive::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+        ]);
+
+        $middleware->api(append: [
+            EnsureUserIsActive::class.':api',
         ]);
 
         $middleware->alias([
@@ -37,6 +44,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.transaction' => WrapWritesInTransaction::class,
             'api.token' => AuthenticateApiToken::class,
             'api.app-only' => RejectApiTokens::class,
+            'admin' => EnsureUserIsAdmin::class,
+            'active' => EnsureUserIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

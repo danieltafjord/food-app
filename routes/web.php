@@ -49,3 +49,4 @@ Route::post('oauth/authorize/household', [ApproveHouseholdAuthorizationControlle
     ->name('oauth.household-authorizations.approve');
 
 require __DIR__.'/settings.php';
+require __DIR__.'/admin.php';

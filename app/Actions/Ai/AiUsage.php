@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\DB;
 
 class AiUsage
 {
+    public function __construct(private AiConfiguration $configuration) {}
+
     /** Reserve before contacting the provider; failed calls also consume budget. */
     public function reserve(User $user, Household $household, string $feature): void
     {
@@ -18,7 +20,7 @@ class AiUsage
                 $key = ['day' => $day, 'scope' => $scope, 'feature' => $feature];
                 DB::table('ai_daily_usage')->insertOrIgnore([...$key, 'used' => 0]);
                 $updated = DB::table('ai_daily_usage')->where($key)
-                    ->where('used', '<', max(0, (int) config("assistance.limits.{$feature}.{$kind}")))
+                    ->where('used', '<', $this->configuration->limit($feature, $kind))
                     ->increment('used');
                 if (! $updated) {
                     $this->reject('daily_limit', 429, (int) now('UTC')->diffInSeconds(now('UTC')->addDay()->startOfDay()));
@@ -34,7 +36,7 @@ class AiUsage
         foreach (['categorization', 'suggestions'] as $feature) {
             $remaining = [];
             foreach ($this->scopes($user, $household) as $kind => $scope) {
-                $limit = max(0, (int) config("assistance.limits.{$feature}.{$kind}"));
+                $limit = $this->configuration->limit($feature, $kind);
                 $used = (int) DB::table('ai_daily_usage')->where([
                     'day' => now('UTC')->toDateString(), 'scope' => $scope, 'feature' => $feature,
                 ])->value('used');

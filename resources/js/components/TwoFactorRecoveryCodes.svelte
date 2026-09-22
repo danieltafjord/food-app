@@ -44,7 +44,7 @@
     });
 </script>
 
-<Card class="w-full">
+<Card class="w-full rounded-3xl border-border/80 shadow-none">
     <CardHeader>
         <CardTitle class="flex gap-3">
             <LockKeyhole class="size-4" />2FA recovery codes
@@ -58,7 +58,10 @@
         <div
             class="flex flex-col gap-3 select-none sm:flex-row sm:items-center sm:justify-between"
         >
-            <Button onclick={toggleRecoveryCodesVisibility} class="w-fit">
+            <Button
+                onclick={toggleRecoveryCodesVisibility}
+                class="w-fit rounded-full"
+            >
                 {#if isRecoveryCodesVisible}
                     <EyeOff class="size-4" />
                 {:else}
@@ -77,6 +80,7 @@
                         <Button
                             variant="secondary"
                             type="submit"
+                            class="rounded-full shadow-none"
                             disabled={processing}
                         >
                             <RefreshCw class="size-4" /> Regenerate codes
@@ -98,7 +102,7 @@
                 <div class="mt-3 space-y-3">
                     <div
                         bind:this={recoveryCodeSectionRef}
-                        class="grid gap-1 rounded-lg bg-muted p-4 font-mono text-sm"
+                        class="grid gap-1 rounded-2xl bg-muted p-4 font-mono text-sm"
                     >
                         {#if !twoFactorAuth.state.recoveryCodesList.length}
                             <div class="space-y-2">

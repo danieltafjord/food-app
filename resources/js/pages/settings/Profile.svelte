@@ -24,7 +24,12 @@
     import { Label } from '@/components/ui/label';
     import { send } from '@/routes/verification';
 
+    let { locales }: { locales: { value: string; label: string }[] } = $props();
+
     const user = $derived(page.props.auth.user);
+
+    const selectClass =
+        'mt-1 block h-10 w-full rounded-full border border-input bg-transparent px-4 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
 </script>
 
 <AppHead title="Profile settings" />
@@ -49,7 +54,7 @@
                 <Input
                     id="name"
                     name="name"
-                    class="mt-1 block w-full"
+                    class="mt-1 block h-10 w-full rounded-full px-4 shadow-none"
                     value={user.name}
                     required
                     autocomplete="name"
@@ -64,13 +69,28 @@
                     id="email"
                     type="email"
                     name="email"
-                    class="mt-1 block w-full"
+                    class="mt-1 block h-10 w-full rounded-full px-4 shadow-none"
                     value={user.email}
                     required
                     autocomplete="username"
                     placeholder="Email address"
                 />
                 <InputError class="mt-2" message={errors.email} />
+            </div>
+
+            <div class="grid gap-2">
+                <Label for="locale">Language</Label>
+                <select
+                    id="locale"
+                    name="locale"
+                    class={selectClass}
+                    value={user.locale ?? 'en'}
+                >
+                    {#each locales as locale (locale.value)}
+                        <option value={locale.value}>{locale.label}</option>
+                    {/each}
+                </select>
+                <InputError class="mt-2" message={errors.locale} />
             </div>
 
             {#if Boolean(page.props.mustVerifyEmail) && !user.email_verified_at}
@@ -94,6 +114,7 @@
             <div class="flex items-center gap-4">
                 <Button
                     type="submit"
+                    class="rounded-full"
                     disabled={processing}
                     data-test="update-profile-button">Save</Button
                 >

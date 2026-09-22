@@ -10,11 +10,11 @@
     } = $props();
 </script>
 
-<header class={variant === 'small' ? '' : 'mb-8 space-y-0.5'}>
+<header class={variant === 'small' ? '' : 'mb-10 space-y-1'}>
     <h2
         class={variant === 'small'
-            ? 'mb-0.5 text-base font-medium'
-            : 'text-xl font-semibold tracking-tight'}
+            ? 'mb-1 text-base font-semibold tracking-tight'
+            : 'text-2xl font-semibold tracking-tight'}
     >
         {title}
     </h2>

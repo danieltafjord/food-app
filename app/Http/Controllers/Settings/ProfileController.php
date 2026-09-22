@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Actions\Users\DeleteAccount;
+use App\Enums\AppLocale;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
@@ -23,6 +24,7 @@ class ProfileController extends Controller
         return Inertia::render('settings/Profile', [
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
             'status' => $request->session()->get('status'),
+            'locales' => collect(AppLocale::cases())->map(fn (AppLocale $locale) => ['value' => $locale->value, 'label' => $locale->label()])->all(),
         ]);
     }
 

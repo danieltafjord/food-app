@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\AiAssistanceController;
 use App\Http\Controllers\Settings\ApiTokenController;
 use App\Http\Controllers\Settings\ConnectedAppController;
 use App\Http\Controllers\Settings\ProfileController;
@@ -32,6 +33,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('api-tokens.store');
     Route::delete('settings/api-tokens/{apiToken}', [ApiTokenController::class, 'destroy'])->name('api-tokens.destroy');
     Route::delete('settings/connected-apps/{grant}', [ConnectedAppController::class, 'destroy'])->name('connected-apps.destroy');
+
+    Route::get('settings/ai', [AiAssistanceController::class, 'edit'])->name('ai-assistance.edit');
+    Route::patch('settings/ai', [AiAssistanceController::class, 'update'])->name('ai-assistance.update');
 
     Route::inertia('settings/appearance', 'settings/Appearance')->name('appearance.edit');
 });

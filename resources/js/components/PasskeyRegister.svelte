@@ -56,13 +56,17 @@
         Passkeys are not supported in this browser.
     </div>
 {:else if !showForm}
-    <Button variant="outline" onclick={() => (showForm = true)}>
+    <Button
+        variant="outline"
+        class="rounded-full shadow-none"
+        onclick={() => (showForm = true)}
+    >
         Add passkey
     </Button>
 {:else}
     <form
         onsubmit={handleSubmit}
-        class="space-y-4 rounded-lg border border-border bg-muted/50 p-4"
+        class="space-y-4 rounded-2xl border border-border/80 bg-muted/50 p-5"
     >
         <div class="grid gap-2">
             <Label for="passkey-name">Passkey name</Label>
@@ -71,7 +75,7 @@
                 type="text"
                 bind:value={name}
                 placeholder="e.g., MacBook Pro, iPhone"
-                class="mt-1 block w-full border-foreground/20"
+                class="mt-1 block h-10 w-full rounded-full px-4 shadow-none"
                 autofocus
             />
             <p class="text-xs text-muted-foreground">
@@ -86,13 +90,19 @@
         <div class="flex gap-2">
             <Button
                 type="submit"
+                class="rounded-full"
                 disabled={passkeyRegister.isLoading || !name.trim()}
             >
                 {passkeyRegister.isLoading
                     ? 'Registering...'
                     : 'Register passkey'}
             </Button>
-            <Button type="button" variant="ghost" onclick={handleCancel}>
+            <Button
+                type="button"
+                variant="ghost"
+                class="rounded-full"
+                onclick={handleCancel}
+            >
                 Cancel
             </Button>
         </div>

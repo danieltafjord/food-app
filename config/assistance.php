@@ -5,6 +5,10 @@ return [
     'enabled' => env('AI_ENABLED', false),
     'classification_model' => env('AI_CLASSIFICATION_MODEL', 'typesafe/jev-1.13'),
     'suggestion_model' => env('AI_SUGGESTION_MODEL', 'google/gemini-3.5-flash-lite'),
+    // OpenRouter reasoning effort for chat-completion features; null uses the provider default.
+    'suggestion_reasoning' => env('AI_SUGGESTION_REASONING', 'minimal'),
+    // System One (classification) has no reasoning parameter; kept for symmetry with the admin page.
+    'classification_reasoning' => null,
     'classification_confidence' => 0.9,
     'cache_seconds' => 86400,
     'limits' => [
