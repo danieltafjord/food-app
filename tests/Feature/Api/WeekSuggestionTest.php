@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Ai\GenerateWeekDinners;
+use App\Actions\Ai\ReviewDinnerRecipes;
 use App\Models\AiRequest;
 use App\Models\Ingredient;
 use Illuminate\Support\Facades\Cache;
@@ -27,7 +28,66 @@ function suggestedDinner(array $overrides = []): array
         ]], $overrides);
 }
 
+it('passes ingredient reuse context and exclusions to generation and independently reviews the result', function () {
+    GenerateWeekDinners::fake([['dinners' => [suggestedDinner()]]]);
+    ReviewDinnerRecipes::fake([['issues' => []]]);
+
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput([
+        'reuse_ingredients' => ['Tomat'], 'excluded_ingredients' => ['Reker'],
+    ]))->assertOk();
+
+    GenerateWeekDinners::assertPrompted(fn ($prompt) => json_decode($prompt->prompt, true)['reuse_ingredients'] === ['Tomat']
+        && json_decode($prompt->prompt, true)['excluded_ingredients'] === ['Reker']);
+    ReviewDinnerRecipes::assertPrompted(fn ($prompt) => json_decode($prompt->prompt, true)['dinners'][0]['notes'] === suggestedDinner()['notes']
+        && json_decode($prompt->prompt, true)['excluded_ingredients'] === ['Reker']);
+});
+
+it('rejects excluded ingredients in new and reused dinners before reviewing', function (bool $reuse) {
+    $id = (string) Str::uuid();
+    GenerateWeekDinners::fake([['dinners' => [suggestedDinner(['existing_id' => $reuse ? $id : null])]]]);
+    ReviewDinnerRecipes::fake()->preventStrayPrompts();
+
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput([
+        'excluded_ingredients' => [' pasta '],
+        'available' => [['id' => $id, 'name' => 'Family pasta', 'category' => 'vegetarian', 'ingredients' => ['Pasta']]],
+    ]))->assertServiceUnavailable();
+
+    ReviewDinnerRecipes::assertNeverPrompted();
+})->with([false, true]);
+
+it('rejects failed recipe reviews without caching or returning the recipe', function (mixed $issues) {
+    GenerateWeekDinners::fake([['dinners' => [suggestedDinner()]], ['dinners' => [suggestedDinner()]]]);
+    ReviewDinnerRecipes::fake([['issues' => $issues], ['issues' => []]]);
+
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())->assertServiceUnavailable()->assertDontSee('Tomatpasta');
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())->assertOk();
+
+    GenerateWeekDinners::assertPromptedTimes(2);
+    ReviewDinnerRecipes::assertPromptedTimes(2);
+    expect(AiRequest::orderBy('id')->pluck('status')->all())->toBe(['failed', 'ok']);
+})->with(['unlisted' => [['unlisted_ingredient']], 'unused' => [['unused_ingredient']],
+    'amount' => [['quantity_mismatch']], 'excluded synonym' => [['excluded_ingredient']],
+    'malformed' => [null], 'unknown issue' => [['unknown']]]);
+
+it('records generation and review costs together and reuses only reviewed results', function () {
+    Http::preventStrayRequests();
+    $answer = fn (array $data, float $cost) => ['id' => 'response', 'model' => 'test',
+        'choices' => [['index' => 0, 'message' => ['role' => 'assistant', 'content' => json_encode($data)], 'finish_reason' => 'stop']],
+        'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 20, 'total_tokens' => 120, 'cost' => $cost]];
+    Http::fake(['https://openrouter.ai/api/v1/chat/completions' => Http::sequence()
+        ->push($answer(['dinners' => [suggestedDinner()]], 0.01))->push($answer(['issues' => []], 0.002))]);
+
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())->assertOk();
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())->assertOk();
+
+    Http::assertSentCount(2);
+    expect((float) AiRequest::first()->cost)->toBe(0.012);
+    expect(AiRequest::first()->input_tokens)->toBe(200);
+    expect(AiRequest::first()->output_tokens)->toBe(40);
+});
+
 it('lets a guest preview complete dinners without creating household data', function () {
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake([['dinners' => [suggestedDinner()]]]);
 
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput(['preferences' => 'Rask pasta']))
@@ -46,6 +106,7 @@ it('lets a guest preview complete dinners without creating household data', func
 it('reuses only recipe references supplied by the caller without reading household catalogues', function () {
     Ingredient::factory()->create(['name' => 'Private ingredient']);
     $id = (string) Str::uuid();
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake([['dinners' => [suggestedDinner(['existing_id' => $id, 'name' => 'Ignored generated name', 'ingredients' => [], 'notes' => null])]]]);
 
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput(['available' => [
@@ -56,6 +117,7 @@ it('reuses only recipe references supplied by the caller without reading househo
 });
 
 it('returns 422 for invalid bounded input before contacting the provider', function (array $input, string $field) {
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake();
 
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput($input))
@@ -72,6 +134,7 @@ it('returns 422 for invalid bounded input before contacting the provider', funct
 ]);
 
 it('returns 503 for incomplete or invalid dinners without exposing provider output', function (array $dinner) {
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake([['dinners' => [$dinner]]]);
 
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())
@@ -93,6 +156,7 @@ it('returns 503 for incomplete or invalid dinners without exposing provider outp
 ]);
 
 it('returns 503 when a provider repeats meals or ignores explicit exclusions', function (array $overrides, array $dinners) {
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake([['dinners' => $dinners]]);
 
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput($overrides))->assertServiceUnavailable();
@@ -106,6 +170,7 @@ it('returns 503 when a provider repeats meals or ignores explicit exclusions', f
 ]);
 
 it('caches identical retries within the caller scope without spending another allowance', function () {
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake([['dinners' => [suggestedDinner()]]]);
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())->assertOk();
 
@@ -117,6 +182,7 @@ it('caches identical retries within the caller scope without spending another al
 
 it('returns 429 when either daily budget is exhausted but can serve a cached retry', function (string $scope) {
     config(['assistance.week_planning.'.$scope => 1]);
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake([['dinners' => [suggestedDinner()]]]);
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())->assertOk();
 
@@ -129,6 +195,7 @@ it('returns 429 when either daily budget is exhausted but can serve a cached ret
 })->with(['ip', 'global']);
 
 it('returns 503 when disabled even for a cached result', function () {
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake([['dinners' => [suggestedDinner()]]]);
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())->assertOk();
     config(['assistance.enabled' => false]);
@@ -139,6 +206,7 @@ it('returns 503 when disabled even for a cached result', function () {
 });
 
 it('returns 429 when the same caller already has a generation running', function () {
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake();
     $key = 'planner:'.substr(hash_hmac('sha256', '127.0.0.1', (string) config('app.key')), 0, 48).':lock';
     $lock = Cache::lock($key, 70);
@@ -163,6 +231,7 @@ it('returns 503 on provider failure without retrying or leaking diagnostics', fu
 });
 
 it('sends the complete recipe schema through the SDK using the configured server model', function () {
+    ReviewDinnerRecipes::fake([['issues' => []]]);
     config(['assistance.suggestion_model' => 'google/gemini-3.1-flash-lite']);
     Http::preventStrayRequests();
     Http::fake(['https://openrouter.ai/api/v1/chat/completions' => Http::response([

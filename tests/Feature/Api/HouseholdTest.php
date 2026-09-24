@@ -125,6 +125,47 @@ it('exposes the active household default servings on /me', function () {
         ->assertJsonPath('data.current_household.default_servings', 3);
 });
 
+it('persists exclusions on creation and shares them with household members', function () {
+    $owner = User::factory()->create();
+    Passport::actingAs($owner);
+    $response = $this->postJson('/api/v1/households', ['name' => 'Kitchen', 'excluded_ingredients' => ['Sopp', 'Reker']])
+        ->assertSuccessful()->assertJsonPath('data.excluded_ingredients', ['Sopp', 'Reker']);
+    $household = Household::findOrFail($response->json('data.id'));
+    expect($household->excluded_ingredients)->toBe(['Sopp', 'Reker']);
+    $member = User::factory()->create();
+    $household->members()->attach($member, ['role' => HouseholdRole::Member->value]);
+    Passport::actingAs($member);
+
+    $this->getJson("/api/v1/households/{$household->id}")->assertOk()->assertJsonPath('data.excluded_ingredients', ['Sopp', 'Reker']);
+    $this->patchJson("/api/v1/households/{$household->id}", ['name' => 'Kitchen', 'excluded_ingredients' => []])->assertForbidden();
+    expect($household->fresh()->excluded_ingredients)->toBe(['Sopp', 'Reker']);
+});
+
+it('preserves exclusions on unrelated updates and lets an owner clear them explicitly', function () {
+    [$owner, $household] = ownerWithHousehold();
+    $household->update(['excluded_ingredients' => ['Sopp']]);
+    Passport::actingAs($owner);
+
+    $this->patchJson("/api/v1/households/{$household->id}", ['name' => 'Renamed', 'default_servings' => 3])
+        ->assertOk()->assertJsonPath('data.excluded_ingredients', ['Sopp']);
+    $this->patchJson("/api/v1/households/{$household->id}", ['name' => 'Renamed', 'excluded_ingredients' => []])
+        ->assertOk()->assertJsonPath('data.excluded_ingredients', []);
+    expect($household->fresh()->excluded_ingredients)->toBe([]);
+});
+
+it('rejects invalid exclusions without changing the household', function (mixed $names) {
+    [$owner, $household] = ownerWithHousehold();
+    $household->update(['excluded_ingredients' => ['Sopp']]);
+    Passport::actingAs($owner);
+
+    $this->patchJson("/api/v1/households/{$household->id}", ['name' => 'Changed', 'excluded_ingredients' => $names])
+        ->assertUnprocessable();
+
+    expect($household->fresh()->name)->toBe($household->name);
+    expect($household->fresh()->excluded_ingredients)->toBe(['Sopp']);
+})->with(['string' => ['Sopp'], 'too many' => [array_fill(0, 31, 'Sopp')], 'long name' => [[str_repeat('x', 81)]],
+    'blank' => [[' ']], 'duplicate' => [['Sopp', 'sopp']], 'markup' => [['<Sopp>']]]);
+
 it('lets owners delete a household', function () {
     [$owner, $household] = ownerWithHousehold();
     Passport::actingAs($owner);

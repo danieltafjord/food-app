@@ -31,6 +31,20 @@ function jevAnswer(string $category = 'produce', float $confidence = 0.98): arra
     return ['answers' => ['category' => ['type' => 'choice', 'choice' => $category, 'confidence' => $confidence]]];
 }
 
+it('uses saved household exclusions and invalidates cached ingredient suggestions when they change', function () {
+    [$user, $household] = ownerWithHousehold();
+    enableAi($user);
+    SuggestDinnerIngredients::fake([['ingredients' => ['Sopp', 'Soy sauce', 'Tomat']], ['ingredients' => ['Sopp', 'Soy sauce', 'Tomat']]]);
+    $input = ['name' => 'Wok', 'ingredients' => [], 'locale' => 'nb', 'excluded_ingredients' => []];
+    $this->postJson('/api/v1/ai/suggest', $input)->assertOk()->assertJsonCount(3, 'data.ingredients');
+    $household->update(['excluded_ingredients' => ['sopp', 'soy']]);
+
+    $this->postJson('/api/v1/ai/suggest', $input)->assertOk()->assertJsonPath('data.ingredients', ['Tomat']);
+
+    SuggestDinnerIngredients::assertPromptedTimes(2);
+    SuggestDinnerIngredients::assertPrompted(fn ($prompt) => json_decode($prompt->prompt, true)['excluded_ingredients'] === ['sopp', 'soy']);
+});
+
 it('returns 401 for unauthenticated AI requests', function () {
     Http::preventStrayRequests();
 

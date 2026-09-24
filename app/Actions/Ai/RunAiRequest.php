@@ -40,7 +40,7 @@ class RunAiRequest
         // Include scope, model and prompt revision so caches cannot cross households or model changes.
         $model = $this->configuration->model($feature);
         $effort = $this->configuration->reasoningEffort($feature)?->value;
-        $revision = 'v2';
+        $revision = $feature === 'suggestions' ? 'v4' : 'v2';
         $key = 'assistance:'.$revision.':'.$household->id.':'.$feature.':'.hash('sha256', json_encode([$model, $effort, config('assistance.classification_confidence'), $context], JSON_THROW_ON_ERROR));
         if (is_array($cached = Cache::get($key))) {
             $this->record($user, $household, $feature, $model, AiRequest::STATUS_CACHED, $context, response: $cached);

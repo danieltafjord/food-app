@@ -10,5 +10,7 @@ class HouseholdData extends Data
         public int $id,
         public string $name,
         public int $defaultServings,
+        /** @var list<string>|null */
+        public ?array $excludedIngredients = null,
     ) {}
 }

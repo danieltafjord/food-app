@@ -10,6 +10,9 @@ class UpdateHousehold
     public function handle(Household $household, HouseholdInputData $data): Household
     {
         $attributes = ['name' => $data->name];
+        if ($data->excludedIngredients !== null) {
+            $attributes['excluded_ingredients'] = array_map('trim', $data->excludedIngredients);
+        }
 
         if ($data->defaultServings !== null) {
             $attributes['default_servings'] = $data->defaultServings;

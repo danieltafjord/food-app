@@ -117,20 +117,29 @@
                         >Forslag til ingredienser</strong
                     >
                     sender navnet, kategorien og ingrediensene til en middag, navnene
-                    på ingrediensene husstanden har lagret, og språket ditt.
+                    på ingrediensene husstanden har lagret, lagrede ingredienser som
+                    skal unngås, og språket ditt.
                 </li>
                 <li>
                     <strong class="text-foreground">Ukeplanlegging</strong> sender
                     det du skriver om hva dere liker, valgene du krysser av, antall
                     porsjoner og dager, middager som skal holdes utenfor, og navn,
                     kategori og ingredienser for lagrede middager som kan brukes på
-                    nytt.
+                    nytt. Ingredienser som skal unngås og ingredienser fra andre planlagte
+                    middager i uken sendes også for å redusere matsvinn. Genererte
+                    oppskrifter sendes til en ekstra KI-kontroll av sammenhengen mellom
+                    ingredienser og fremgangsmåte før de vises.
                 </li>
                 <li>
                     <strong class="text-foreground">Middagsbilder</strong> kan lages
                     ut fra navnet, kategorien og ingrediensene til en middag.
                 </li>
             </ul>
+            <p class="mt-3">
+                Ingredienser som skal unngås lagres på enheten uten konto, eller
+                hos husstanden når du er logget inn. Medlemmene kan se listen,
+                og eiere kan endre eller tømme den.
+            </p>
             <p class="mt-3">
                 Middagsbilder du laster opp eller lager, lagres som filer som
                 kan åpnes av alle som har adressen. Adressene er tilfeldige og

@@ -16,7 +16,7 @@ class Household extends Model
     use HasFactory, TracksContentAuthors;
 
     /** @var list<string> */
-    protected $fillable = ['name', 'default_servings'];
+    protected $fillable = ['name', 'default_servings', 'excluded_ingredients'];
 
     /**
      * `sync_version` is locked and incremented by every syncable write — see
@@ -37,6 +37,7 @@ class Household extends Model
     {
         return [
             'default_servings' => 'integer',
+            'excluded_ingredients' => 'array',
             'sync_version' => 'integer',
         ];
     }
@@ -112,6 +113,6 @@ class Household extends Model
     /** @return array<string, mixed> */
     public function contentErasureDefaults(): array
     {
-        return ['name' => 'Household', 'default_servings' => 2];
+        return ['name' => 'Household', 'default_servings' => 2, 'excluded_ingredients' => null];
     }
 }

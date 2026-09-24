@@ -111,19 +111,29 @@
                         >Ingredient suggestions</strong
                     >
                     send a dinner’s name, category and ingredients, the names of ingredients
-                    your household has saved, and your language.
+                    your household has saved, saved ingredient exclusions, and your
+                    language.
                 </li>
                 <li>
                     <strong class="text-foreground">Week planning</strong> sends what
                     you write about your preferences, the options you pick, servings
                     and the number of days, dinners to leave out, and the names, categories
-                    and ingredients of saved dinners it may reuse.
+                    and ingredients of saved dinners it may reuse. It also sends ingredient
+                    exclusions and ingredients from other meals planned for the week
+                    to reduce waste. Generated recipes are sent for an additional
+                    AI consistency check before they are returned.
                 </li>
                 <li>
                     <strong class="text-foreground">Dinner pictures</strong> can be
                     generated from a dinner’s name, category and ingredients.
                 </li>
             </ul>
+            <p class="mt-3">
+                Ingredient exclusions are saved on your device when you use the
+                app without an account, or with your household when signed in.
+                Household members can see them and owners can edit or clear
+                them.
+            </p>
             <p class="mt-3">
                 Dinner pictures you upload or generate are stored as files that
                 can be opened by anyone who has their address. The addresses are

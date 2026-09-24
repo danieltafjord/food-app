@@ -15,5 +15,16 @@ class HouseholdInputData extends Data
         #[Min(1)]
         #[Max(99)]
         public ?int $defaultServings = null,
+        /** Omitted/null leaves exclusions untouched; [] clears them. @var list<string>|null */
+        public ?array $excludedIngredients = null,
     ) {}
+
+    /** @return array<string, list<string>> */
+    public static function rules(): array
+    {
+        return [
+            'excluded_ingredients' => ['sometimes', 'nullable', 'array', 'list', 'max:30'],
+            'excluded_ingredients.*' => ['required', 'string', 'max:80', 'distinct:ignore_case', 'not_regex:/[<>\\r\\n]/'],
+        ];
+    }
 }
