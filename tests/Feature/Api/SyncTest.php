@@ -553,16 +553,32 @@ it('tombstones a REST-deleted dinner\'s items so peers do not keep them', functi
     expect(DinnerItem::withTrashed()->find($item->id)->trashed())->toBeTrue();
 });
 
-it('keeps a deleted ingredient on shopping lists as free text', function () {
+it('removes a deleted ingredient from recipes and all shopping lists and syncs the deletions', function () {
     $ingredient = Ingredient::factory()->for($this->household)->create(['name' => 'Eggs']);
     $list = ShoppingList::factory()->for($this->household)->create();
     $listItem = ShoppingListItem::factory()->for($list, 'shoppingList')->create(['ingredient_id' => $ingredient->id, 'name' => null]);
+    $otherList = ShoppingList::factory()->for($this->household)->create();
+    $checkedItem = ShoppingListItem::factory()->for($otherList, 'shoppingList')->for($ingredient)->create(['is_checked' => true]);
+    $keptItem = ShoppingListItem::factory()->for($list, 'shoppingList')->create(['ingredient_id' => null, 'name' => 'Milk']);
+    $dinner = Dinner::factory()->for($this->household)->create();
+    $dinnerItem = DinnerItem::factory()->for($dinner)->for($ingredient)->create();
     $cursor = sync(null)->json('cursor');
 
     // Deleting via sync (REST refuses while referenced).
     sync($cursor, ['ingredients' => [tombstone($ingredient->uuid)]])->assertSuccessful();
 
-    expect($listItem->fresh())->ingredient_id->toBeNull()->name->toBe('Eggs');
+    $this->assertSoftDeleted($ingredient);
+    $this->assertSoftDeleted($dinnerItem);
+    $this->assertSoftDeleted($listItem);
+    $this->assertSoftDeleted($checkedItem);
+    $this->assertNotSoftDeleted($keptItem);
+    $this->assertNotSoftDeleted($list);
+    $this->assertNotSoftDeleted($dinner);
+
+    $pull = sync($cursor)->assertSuccessful();
+    expect(collect($pull->json('changes.shopping_list_items'))->firstWhere('id', $listItem->uuid)['deleted_at'])->not->toBeNull();
+    expect(collect($pull->json('changes.shopping_list_items'))->firstWhere('id', $checkedItem->uuid)['deleted_at'])->not->toBeNull();
+    expect(collect($pull->json('changes.dinner_items'))->firstWhere('id', $dinnerItem->uuid)['deleted_at'])->not->toBeNull();
 });
 
 it('requires an active household', function () {

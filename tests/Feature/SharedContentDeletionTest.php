@@ -146,13 +146,17 @@ it('attributes new sync children to the authenticated writer and ignores spoofed
     expect($item->fresh()->trashed())->toBeTrue()->and($list->fresh()->trashed())->toBeFalse();
 });
 
-it('erases ingredient text copied into detached shopping items', function () {
+it('erases ingredient text previously copied into legacy detached shopping items', function () {
     [$owner, $household] = ownerWithHousehold();
     $member = User::factory()->create();
     $ingredient = Ingredient::factory()->for($household)->make(['name' => 'Private ingredient']);
     $ingredient->attributeContentTo($member->id)->save();
     $list = ShoppingList::factory()->for($household)->create(['created_by_user_id' => $owner->id]);
     $item = ShoppingListItem::factory()->for($list)->for($ingredient)->create(['name' => null]);
+    // Older versions detached shopping rows and copied the ingredient's name.
+    $item->name = $ingredient->name;
+    $item->ingredient_id = null;
+    $item->inheritContentAuthors($ingredient, ['name' => 'name'])->save();
     $ingredient->delete();
     expect($item->fresh()->name)->toBe('Private ingredient');
 

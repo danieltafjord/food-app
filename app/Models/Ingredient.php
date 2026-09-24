@@ -48,22 +48,12 @@ class Ingredient extends Model
         return (int) $this->household_id;
     }
 
-    /**
-     * A deleted ingredient leaves recipes (its dinner items are tombstoned) but
-     * shopping lists keep the line as free text so nothing vanishes mid-shop.
-     */
+    /** Remove deleted ingredients from recipes and shopping lists on every device. */
     protected function tombstoneChildren(CarbonInterface $deletedAt, int $version): void
     {
         $this->dinnerItems()->update($this->tombstoneStamp($deletedAt, $version));
 
-        $this->shoppingListItems()->eachById(function (ShoppingListItem $item) use ($version): void {
-            if ($item->name === null) {
-                $item->name = $this->name;
-                $item->inheritContentAuthors($this, ['name' => 'name']);
-            }
-            $item->ingredient_id = null;
-            $item->stampSync($version)->save();
-        });
+        $this->shoppingListItems()->update($this->tombstoneStamp($deletedAt, $version));
     }
 
     /** @return array<string, mixed> */
