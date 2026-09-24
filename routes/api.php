@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Public\V1\TodayController;
 use App\Http\Controllers\Api\V1\AiController;
 use App\Http\Controllers\Api\V1\Auth\DeviceController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
+use App\Http\Controllers\Api\V1\DinnerCategoryController;
 use App\Http\Controllers\Api\V1\DinnerController;
 use App\Http\Controllers\Api\V1\DinnerPlanController;
 use App\Http\Controllers\Api\V1\DinnerPlanEntryController;
@@ -61,6 +62,7 @@ Route::prefix('v1')
             // Catalogue & recipes
             Route::apiResource('ingredients', IngredientController::class);
             Route::apiResource('dinners', DinnerController::class);
+            Route::apiResource('dinner-categories', DinnerCategoryController::class)->parameters(['dinner-categories' => 'dinnerCategory'])->only(['index', 'store', 'update', 'destroy']);
 
             // Dinner plans + their scheduled entries
             Route::get('dinner-plans', [DinnerPlanController::class, 'index'])->name('dinner-plans.index');
@@ -104,6 +106,7 @@ Route::prefix('public/v1')
 
         Route::apiResource('ingredients', IngredientController::class);
         Route::apiResource('dinners', DinnerController::class);
+        Route::apiResource('dinner-categories', DinnerCategoryController::class)->parameters(['dinner-categories' => 'dinnerCategory'])->only(['index', 'store', 'update', 'destroy']);
 
         Route::apiResource('dinner-plans', DinnerPlanController::class)->parameters(['dinner-plans' => 'dinnerPlan']);
         Route::apiResource('dinner-plans.entries', DinnerPlanEntryController::class)

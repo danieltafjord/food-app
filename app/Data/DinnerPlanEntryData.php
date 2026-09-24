@@ -17,6 +17,7 @@ class DinnerPlanEntryData extends Data
         public int $servings,
         public MealType $mealType,
         public ?string $notes,
+        public ?string $dinnerCategory = null,
     ) {}
 
     public static function fromEntry(DinnerPlanEntry $entry): self
@@ -25,6 +26,7 @@ class DinnerPlanEntryData extends Data
             id: $entry->id,
             dinnerId: $entry->dinner_id,
             dinnerName: $entry->dinner?->name,
+            dinnerCategory: $entry->dinner?->category,
             scheduledDate: $entry->scheduled_date,
             servings: $entry->servings,
             mealType: $entry->meal_type,

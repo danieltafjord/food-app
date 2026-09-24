@@ -6,7 +6,9 @@ use App\Data\DinnerInputData;
 use App\Models\Dinner;
 use App\Models\Household;
 use App\Models\User;
+use App\Rules\DinnerCategoryReference;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class CreateDinner
 {
@@ -14,6 +16,7 @@ class CreateDinner
 
     public function handle(Household $household, DinnerInputData $data, ?User $creator = null): Dinner
     {
+        Validator::make(['category' => $data->category], ['category' => ['nullable', 'string', new DinnerCategoryReference($household->id)]])->validate();
         $this->assertIngredientsBelongToHousehold($household, $data);
 
         return DB::transaction(function () use ($household, $data, $creator): Dinner {
@@ -22,6 +25,7 @@ class CreateDinner
                 'name' => $data->name,
                 'default_servings' => $data->defaultServings,
                 'notes' => $data->notes,
+                'category' => $data->category,
             ]);
 
             $this->syncItems($dinner, $data);

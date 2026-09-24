@@ -53,6 +53,12 @@ class Household extends Model
             ->withTimestamps();
     }
 
+    /** @return HasMany<HouseholdDinnerCategory, $this> */
+    public function dinnerCategories(): HasMany
+    {
+        return $this->hasMany(HouseholdDinnerCategory::class);
+    }
+
     /** @return HasMany<Dinner, $this> */
     public function dinners(): HasMany
     {

@@ -19,6 +19,7 @@ class DinnerData extends Data
         public ?string $notes,
         #[ItemsOf(DinnerItemData::class)]
         public array $items,
+        public ?string $category = null,
     ) {}
 
     public static function fromDinner(Dinner $dinner): self
@@ -28,6 +29,7 @@ class DinnerData extends Data
             name: $dinner->name,
             defaultServings: $dinner->default_servings,
             notes: $dinner->notes,
+            category: $dinner->category,
             items: $dinner->items->map(fn (DinnerItem $item) => DinnerItemData::fromItem($item)->toArray())->all(),
         );
     }

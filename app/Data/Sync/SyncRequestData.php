@@ -39,7 +39,7 @@ class SyncRequestData extends Data
         return [
             'cursor' => ['nullable', 'integer', 'min:0'],
             'household_id' => ['nullable', 'integer'],
-            'changes' => ['nullable', 'array:ingredients,dinners,dinner_items,dinner_plans,plan_entries,shopping_lists,shopping_list_items'],
+            'changes' => ['nullable', 'array:dinner_categories,ingredients,dinners,dinner_items,dinner_plans,plan_entries,shopping_lists,shopping_list_items'],
             'changes.*' => ['array'],
             'changes.*.*' => ['array'],
         ];

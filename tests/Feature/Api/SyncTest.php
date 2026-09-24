@@ -361,7 +361,7 @@ it('answers an up-to-date empty poll without allocating a version', function () 
 
     expect($poll->json('cursor'))->toBe($cursor)
         ->and($poll->json('changes'))->toBe(array_fill_keys(
-            ['ingredients', 'dinners', 'dinner_items', 'dinner_plans', 'plan_entries', 'shopping_lists', 'shopping_list_items'],
+            ['ingredients', 'dinner_categories', 'dinners', 'dinner_items', 'dinner_plans', 'plan_entries', 'shopping_lists', 'shopping_list_items'],
             [],
         ))
         ->and($poll->json('rejected'))->toBe([])
@@ -708,4 +708,70 @@ it('reports rejected alias edits using the incoming identity without changing th
         ->assertJsonPath('rejected.dinner_items.0.code', 'unknown_parent')
         ->assertJsonPath('remaps.dinner_items.'.$duplicate->uuid, $first->uuid);
     expect((float) $first->fresh()->quantity)->toBe(100.0);
+});
+
+it('syncs dinner categories and preserves them for older clients that omit the field', function () {
+    $this->freezeTime();
+    $row = array_replace(dinnerRow(), ['category' => 'fish']);
+    sync(null, ['dinners' => [$row]])->assertOk()->assertJsonPath('changes.dinners.0.category', 'fish');
+    $this->assertDatabaseHas('dinners', ['uuid' => $row['id'], 'category' => 'fish']);
+    sync()->assertOk()->assertJsonPath('changes.dinners.0.category', 'fish');
+
+    $this->travel(1)->seconds();
+    unset($row['category']);
+    $row['name'] = 'Edited on an older app';
+    $row['updated_at'] = now()->toISOString();
+    sync(null, ['dinners' => [$row]])->assertOk()->assertJsonPath('changes.dinners.0.category', 'fish');
+    $this->assertDatabaseHas('dinners', ['uuid' => $row['id'], 'category' => 'fish', 'name' => $row['name']]);
+
+    $this->travel(1)->seconds();
+    $row['category'] = null;
+    $row['updated_at'] = now()->toISOString();
+    sync(null, ['dinners' => [$row]])->assertOk()->assertJsonPath('changes.dinners.0.category', null);
+    $this->assertDatabaseHas('dinners', ['uuid' => $row['id'], 'category' => null]);
+});
+
+it('rejects an invalid dinner category without rejecting other rows', function () {
+    $invalid = array_replace(dinnerRow('Invalid'), ['category' => 'produce']);
+    $valid = array_replace(dinnerRow('Valid'), ['category' => 'vegetarian']);
+    sync(null, ['dinners' => [$invalid, $valid]])->assertOk()
+        ->assertJsonPath('rejected.dinners.0.id', $invalid['id'])
+        ->assertJsonPath('rejected.dinners.0.code', 'invalid')
+        ->assertJsonPath('changes.dinners.0.category', 'vegetarian');
+    $this->assertDatabaseMissing('dinners', ['uuid' => $invalid['id']]);
+    $this->assertDatabaseHas('dinners', ['uuid' => $valid['id'], 'category' => 'vegetarian']);
+});
+
+it('syncs custom categories before recipes and shares renames and deletions', function () {
+    $category = syncRow(['name' => 'Quick']);
+    $dinner = dinnerRow() + ['category' => $category['id']];
+    $first = sync(null, ['dinners' => [$dinner], 'dinner_categories' => [$category]])->assertOk();
+    expect($first->json('rejected'))->toBe([]);
+    expect($first->json('changes.dinners.0.category'))->toBe($category['id']);
+    $this->travel(1)->seconds();
+    $offlineEditTime = now()->toISOString();
+    $this->travel(1)->seconds();
+    $category['name'] = 'Weeknight';
+    $category['updated_at'] = now()->toISOString();
+    $rename = sync($first->json('cursor'), ['dinner_categories' => [$category]])->assertOk();
+    expect($rename->json('changes.dinner_categories.0.name'))->toBe('Weeknight');
+    $this->travel(1)->seconds();
+    $deleted = sync($rename->json('cursor'), ['dinner_categories' => [tombstone($category['id'])]])->assertOk();
+    expect($deleted->json('changes.dinners.0.category'))->toBeNull();
+    expect(Dinner::where('uuid', $dinner['id'])->first())->not->toBeNull();
+    // An edit made offline before the deletion still keeps the recipe content.
+    $this->travel(1)->seconds();
+    $dinner['name'] = 'Offline edited soup';
+    $dinner['updated_at'] = $offlineEditTime;
+    $late = sync($first->json('cursor'), ['dinners' => [$dinner]])->assertOk();
+    expect($late->json('rejected'))->toBe([]);
+    expect($late->json('changes.dinners.0'))->toMatchArray(['name' => 'Offline edited soup', 'category' => null]);
+});
+
+it('rejects cross-household custom category assignments over sync', function () {
+    [, $other] = ownerWithHousehold();
+    $category = $other->dinnerCategories()->create(['name' => 'Private']);
+    $response = sync(null, ['dinners' => [dinnerRow() + ['category' => $category->uuid]]])->assertOk();
+    expect($response->json('rejected.dinners.0.code'))->toBe('unknown_parent');
+    expect($this->household->dinners()->count())->toBe(0);
 });

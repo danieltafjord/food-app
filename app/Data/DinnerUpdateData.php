@@ -20,5 +20,8 @@ class DinnerUpdateData extends Data
         public string|null|Optional $notes = new Optional,
         #[DataCollectionOf(DinnerItemInputData::class)]
         public array|Optional $items = new Optional,
+        /** Built-in category slug or a household custom category UUID. */
+        #[Max(36)]
+        public string|null|Optional $category = new Optional,
     ) {}
 }

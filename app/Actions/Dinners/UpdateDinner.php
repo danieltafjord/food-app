@@ -5,7 +5,9 @@ namespace App\Actions\Dinners;
 use App\Data\DinnerInputData;
 use App\Data\DinnerUpdateData;
 use App\Models\Dinner;
+use App\Rules\DinnerCategoryReference;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Spatie\LaravelData\Optional;
 
 class UpdateDinner
@@ -14,6 +16,9 @@ class UpdateDinner
 
     public function handle(Dinner $dinner, DinnerInputData|DinnerUpdateData $data): Dinner
     {
+        if (! $data->category instanceof Optional) {
+            Validator::make(['category' => $data->category], ['category' => ['nullable', 'string', new DinnerCategoryReference($dinner->household_id)]])->validate();
+        }
         if (! $data->items instanceof Optional) {
             $this->assertIngredientsBelongToHousehold($dinner->household, $data);
         }
@@ -23,6 +28,7 @@ class UpdateDinner
                 'name' => $data->name,
                 'default_servings' => $data->defaultServings,
                 'notes' => $data->notes,
+                'category' => $data->category,
             ], fn ($value) => ! $value instanceof Optional);
             $dinner->update($attributes);
 

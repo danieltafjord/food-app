@@ -22,7 +22,7 @@ class GetDinnerTool extends PaginatedHouseholdTool
         $page = $this->page($request, $record->items()->with('ingredient'),
             fn (DinnerItem $row) => DinnerItemData::fromItem($row)->toArray(), searchable: false);
 
-        return Response::json(['record' => ['id' => $record->id, 'name' => $record->name, 'default_servings' => $record->default_servings, 'notes' => $record->notes], ...$page]);
+        return Response::json(['record' => ['id' => $record->id, 'name' => $record->name, 'default_servings' => $record->default_servings, 'category' => $record->category, 'category_name' => $this->household()->dinnerCategories()->where('uuid', $record->category)->value('name') ?? $record->category, 'notes' => $record->notes], ...$page]);
     }
 
     /** @return array<string, Type> */

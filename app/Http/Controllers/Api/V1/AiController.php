@@ -56,9 +56,11 @@ class AiController extends ApiController
             'name' => ['required', 'string', 'max:120'],
             'ingredients' => ['present', 'array', 'max:40'],
             'ingredients.*' => ['required', 'string', 'max:120'],
+            'category' => ['sometimes', 'nullable', 'string', 'max:80'],
             'locale' => ['required', Rule::in(['en', 'nb'])],
         ]);
         $household = $this->currentHousehold($request);
+        $input['category'] ??= null;
         $input['name'] = trim($input['name']);
         $input['ingredients'] = array_values(array_unique(array_map(fn (string $name) => mb_strtolower(trim($name)), $input['ingredients'])));
         sort($input['ingredients']);

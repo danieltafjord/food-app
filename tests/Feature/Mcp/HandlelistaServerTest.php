@@ -139,7 +139,7 @@ test('catalogue tools search and page only the token household', function (strin
 
 test('dinner details page ingredients without loading the full recipe into list results', function () {
     [$user, $household] = ownerWithHousehold();
-    $dinner = Dinner::factory()->for($household)->create(['notes' => 'Keep chilled']);
+    $dinner = Dinner::factory()->for($household)->create(['notes' => 'Keep chilled', 'category' => 'fish']);
     $items = DinnerItem::factory()->count(3)->for($dinner)->create();
     $token = mcpToken($user, $household);
 
@@ -147,6 +147,8 @@ test('dinner details page ingredients without loading the full recipe into list 
     $first = mcpData(mcpCall($token, 'tools/call', ['name' => 'get-dinner-tool', 'arguments' => ['dinner_id' => $dinner->id, 'limit' => 2]]));
     $last = mcpData(mcpCall($token, 'tools/call', ['name' => 'get-dinner-tool', 'arguments' => ['dinner_id' => $dinner->id, 'after_id' => $first['next_cursor']]]));
 
+    expect($summary['data'][0]['category'])->toBe('fish');
+    expect($first['record']['category'])->toBe('fish');
     expect($summary['data'][0])->item_count->toBe(3)->not->toHaveKey('items');
     expect($first['record']['notes'])->toBe('Keep chilled');
     expect($first['data'])->toHaveCount(2);

@@ -26,7 +26,7 @@ it('creates a dinner plan', function () {
 
 it('schedules a dinner on a day', function () {
     $plan = DinnerPlan::factory()->for($this->household)->create();
-    $dinner = Dinner::factory()->for($this->household)->create();
+    $dinner = Dinner::factory()->for($this->household)->create(['category' => 'fish']);
 
     $this->postJson("/api/v1/dinner-plans/{$plan->id}/entries", [
         'dinner_id' => $dinner->id,
@@ -35,6 +35,7 @@ it('schedules a dinner on a day', function () {
     ])
         ->assertSuccessful()
         ->assertJsonPath('data.dinner_id', $dinner->id)
+        ->assertJsonPath('data.dinner_category', 'fish')
         ->assertJsonPath('data.servings', 2)
         ->assertJsonPath('data.meal_type', 'dinner');
 

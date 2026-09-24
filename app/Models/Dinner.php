@@ -24,6 +24,7 @@ class Dinner extends Model
         'name',
         'default_servings',
         'notes',
+        'category',
     ];
 
     /** @var array<string, mixed> */
@@ -92,6 +93,6 @@ class Dinner extends Model
     /** @return array<string, mixed> */
     public function contentErasureDefaults(): array
     {
-        return ['name' => 'Recipe', 'default_servings' => 1, 'notes' => null];
+        return ['name' => 'Recipe', 'default_servings' => 1, 'notes' => null, 'category' => null];
     }
 }

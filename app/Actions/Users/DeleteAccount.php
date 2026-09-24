@@ -10,6 +10,7 @@ use App\Models\DinnerItem;
 use App\Models\DinnerPlan;
 use App\Models\DinnerPlanEntry;
 use App\Models\Household;
+use App\Models\HouseholdDinnerCategory;
 use App\Models\HouseholdInvitation;
 use App\Models\Ingredient;
 use App\Models\ShoppingList;
@@ -24,7 +25,7 @@ use Laravel\Passport\Passport;
 class DeleteAccount
 {
     /** @var list<class-string<Model>> */
-    private const CONTENT_MODELS = [Ingredient::class, Dinner::class, DinnerItem::class, DinnerPlan::class, DinnerPlanEntry::class, ShoppingList::class, ShoppingListItem::class];
+    private const CONTENT_MODELS = [HouseholdDinnerCategory::class, Ingredient::class, Dinner::class, DinnerItem::class, DinnerPlan::class, DinnerPlanEntry::class, ShoppingList::class, ShoppingListItem::class];
 
     public function __construct(private DeleteHousehold $deleteHousehold, private AllocateSyncVersion $allocateVersion) {}
 

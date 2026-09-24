@@ -3,6 +3,7 @@
 namespace App\Actions\Sync;
 
 use App\Actions\Dinners\MergeDuplicateDinnerItems;
+use App\Enums\DinnerCategory;
 use App\Enums\MealType;
 use App\Models\Concerns\Syncable;
 use App\Models\Dinner;
@@ -10,10 +11,12 @@ use App\Models\DinnerItem;
 use App\Models\DinnerPlan;
 use App\Models\DinnerPlanEntry;
 use App\Models\Household;
+use App\Models\HouseholdDinnerCategory;
 use App\Models\Ingredient;
 use App\Models\ShoppingList;
 use App\Models\ShoppingListItem;
 use App\Models\User;
+use App\Rules\DinnerCategoryReference;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -108,21 +111,33 @@ class ApplySyncBatch
                     'category_source' => ['sometimes', 'nullable', 'in:user,dictionary,ai'],
                 ],
             ],
+            'dinner_categories' => [
+                'model' => HouseholdDinnerCategory::class,
+                'fields' => ['name'],
+                'fks' => [],
+                'nullableFks' => [],
+                'hasHousehold' => true,
+                'query' => fn (Household $h, bool $liveParents): Builder => $h->dinnerCategories()->getQuery(),
+                'serialize' => fn (HouseholdDinnerCategory $m): array => ['name' => $m->name],
+                'rules' => ['name' => ['required', 'string', 'max:80', 'regex:/\S/u']],
+            ],
             'dinners' => [
                 'model' => Dinner::class,
-                'fields' => ['name', 'default_servings', 'notes'],
+                'fields' => ['name', 'default_servings', 'notes', 'category'],
                 'fks' => [],
                 'nullableFks' => [],
                 'hasHousehold' => true,
                 'query' => fn (Household $h, bool $liveParents): Builder => $h->dinners()->getQuery(),
                 'serialize' => fn (Dinner $m): array => [
                     'name' => $m->name,
+                    'category' => $m->category,
                     'default_servings' => $m->default_servings,
                     'notes' => $m->notes,
                 ],
                 'rules' => [
                     'name' => ['required', 'string', 'max:255'],
                     'default_servings' => ['required', 'integer', 'min:1', 'max:99'],
+                    'category' => ['sometimes', 'nullable', 'string', 'max:36'],
                     'notes' => ['nullable', 'string', 'max:5000'],
                 ],
             ],
@@ -492,6 +507,23 @@ class ApplySyncBatch
             $state->reject($key, $originalUuid, 'unknown_parent', $foreignKeys);
 
             return;
+        }
+
+        if ($key === 'dinners' && isset($row['category'])) {
+            $categoryValidator = Validator::make($row, ['category' => [new DinnerCategoryReference($household->id, allowDeleted: true)]]);
+            if ($categoryValidator->fails()) {
+                $state->reject($key, $uuid, Str::isUuid($row['category']) ? 'unknown_parent' : 'invalid', $categoryValidator->errors()->first());
+
+                return;
+            }
+            // A stale offline recipe edit keeps its content but cannot reattach a deleted label.
+            if (DinnerCategory::tryFrom($row['category']) === null
+                && ! $household->dinnerCategories()->where('uuid', $row['category'])->exists()) {
+                $row['category'] = null;
+            }
+        }
+        if ($key === 'dinner_categories') {
+            $row['name'] = preg_replace('/\s+/u', ' ', trim($row['name']));
         }
 
         $attributes = $foreignKeys;

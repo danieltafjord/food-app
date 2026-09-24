@@ -129,3 +129,39 @@ it('keeps distinct unit rows and their identities when a recipe ingredient set i
     expect($dinner->items()->pluck('id')->sort()->values()->all())->toBe([$grams->id, $cup->id])
         ->and((float) $grams->fresh()->quantity)->toBe(200.0);
 });
+
+it('creates a dinner with an optional category and exposes it when browsing', function (?string $category) {
+    $response = $this->postJson('/api/v1/dinners', ['name' => 'Category dinner', 'category' => $category])
+        ->assertSuccessful()->assertJsonPath('data.category', $category);
+
+    $this->assertDatabaseHas('dinners', ['id' => $response->json('data.id'), 'category' => $category]);
+    $this->getJson('/api/v1/dinners')->assertSuccessful()->assertJsonPath('data.0.category', $category);
+})->with([null, 'meat', 'fish', 'vegetarian', 'other']);
+
+it('preserves omitted categories and explicitly changes or clears them', function () {
+    $dinner = Dinner::factory()->for($this->household)->create(['category' => 'fish']);
+    $this->patchJson("/api/v1/dinners/{$dinner->id}", ['name' => 'Renamed'])
+        ->assertSuccessful()->assertJsonPath('data.category', 'fish');
+    $this->patchJson("/api/v1/dinners/{$dinner->id}", ['category' => 'vegetarian'])
+        ->assertSuccessful()->assertJsonPath('data.category', 'vegetarian');
+    $this->assertDatabaseHas('dinners', ['id' => $dinner->id, 'category' => 'vegetarian']);
+    $this->patchJson("/api/v1/dinners/{$dinner->id}", ['category' => null])
+        ->assertSuccessful()->assertJsonPath('data.category', null);
+    $this->assertDatabaseHas('dinners', ['id' => $dinner->id, 'category' => null]);
+});
+
+it('rejects unsupported dinner categories without changing the dinner', function () {
+    $dinner = Dinner::factory()->for($this->household)->create(['category' => 'fish']);
+    $this->patchJson("/api/v1/dinners/{$dinner->id}", ['category' => 'produce'])
+        ->assertUnprocessable()->assertJsonValidationErrors('category');
+    $this->assertDatabaseHas('dinners', ['id' => $dinner->id, 'category' => 'fish']);
+    $this->postJson('/api/v1/dinners', ['name' => 'Invalid category dinner', 'category' => 'produce'])
+        ->assertUnprocessable()->assertJsonValidationErrors('category');
+    $this->assertDatabaseMissing('dinners', ['name' => 'Invalid category dinner']);
+});
+
+it('does not allow changing another household dinner category', function () {
+    $dinner = Dinner::factory()->create(['category' => 'fish']);
+    $this->patchJson("/api/v1/dinners/{$dinner->id}", ['category' => 'meat'])->assertNotFound();
+    $this->assertDatabaseHas('dinners', ['id' => $dinner->id, 'category' => 'fish']);
+});

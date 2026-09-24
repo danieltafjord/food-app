@@ -16,8 +16,10 @@ class ListDinnersTool extends PaginatedHouseholdTool
 {
     public function handle(Request $request): Response
     {
+        $categories = $this->household()->dinnerCategories()->pluck('name', 'uuid');
+
         return Response::json($this->page($request, $this->household()->dinners()->withCount('items'),
-            fn (Dinner $row) => ['id' => $row->id, 'name' => $row->name, 'default_servings' => $row->default_servings, 'item_count' => $row->items_count]));
+            fn (Dinner $row) => ['id' => $row->id, 'name' => $row->name, 'default_servings' => $row->default_servings, 'category' => $row->category, 'category_name' => $categories[$row->category] ?? $row->category, 'item_count' => $row->items_count]));
     }
 
     /** @return array<string, Type> */

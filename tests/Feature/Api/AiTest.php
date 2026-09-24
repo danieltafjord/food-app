@@ -508,3 +508,40 @@ it('records actual suggestion cost and counts cached and reasoning tokens once',
     expect(AiRequest::query()->sole())->input_tokens->toBe(100)->output_tokens->toBe(30)->cost->toEqualWithDelta(0.0042, 0.000001);
     Http::assertSent(fn ($request) => $request['provider']['data_collection'] === 'deny');
 });
+
+it('uses the chosen dinner category as suggestion context and isolates cached answers', function () {
+    [$user] = ownerWithHousehold();
+    enableAi($user);
+    SuggestDinnerIngredients::fake([
+        ['ingredients' => ['Chicken']],
+        ['ingredients' => ['Beans']],
+    ]);
+    $input = ['name' => 'Tacos', 'ingredients' => [], 'locale' => 'en'];
+    $this->postJson('/api/v1/ai/suggest', $input + ['category' => 'meat'])
+        ->assertOk()->assertJsonPath('data.ingredients', ['Chicken']);
+    $this->postJson('/api/v1/ai/suggest', $input + ['category' => 'vegetarian'])
+        ->assertOk()->assertJsonPath('data.ingredients', ['Beans']);
+    $this->postJson('/api/v1/ai/suggest', $input + ['category' => 'meat'])
+        ->assertOk()->assertJsonPath('data.ingredients', ['Chicken']);
+    SuggestDinnerIngredients::assertPrompted(fn ($prompt) => json_decode($prompt->prompt, true)['category'] === 'vegetarian');
+    $this->assertDatabaseHas('ai_daily_usage', ['scope' => 'user:'.$user->id, 'feature' => 'suggestions', 'used' => 2]);
+});
+
+it('rejects an invalid suggestion category before inference', function () {
+    [$user] = ownerWithHousehold();
+    enableAi($user);
+    Http::preventStrayRequests();
+    $this->postJson('/api/v1/ai/suggest', ['name' => 'Soup', 'ingredients' => [], 'locale' => 'en', 'category' => str_repeat('x', 81)])
+        ->assertUnprocessable()->assertJsonValidationErrors('category');
+    Http::assertNothingSent();
+    $this->assertDatabaseCount('ai_daily_usage', 0);
+});
+
+it('uses custom category names as suggestion context including unsynced offline categories', function () {
+    [$user] = ownerWithHousehold();
+    enableAi($user);
+    SuggestDinnerIngredients::fake([['ingredients' => ['Rice']]]);
+    $this->postJson('/api/v1/ai/suggest', ['name' => 'Dinner', 'ingredients' => [], 'locale' => 'en', 'category' => 'Quick meals'])
+        ->assertOk()->assertJsonPath('data.ingredients', ['Rice']);
+    SuggestDinnerIngredients::assertPrompted(fn ($prompt) => json_decode($prompt->prompt, true)['category'] === 'Quick meals');
+});

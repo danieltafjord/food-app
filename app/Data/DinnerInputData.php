@@ -21,5 +21,8 @@ class DinnerInputData extends Data
         public ?string $notes = null,
         #[DataCollectionOf(DinnerItemInputData::class)]
         public array $items = [],
+        /** Built-in category slug or a household custom category UUID. */
+        #[Max(36)]
+        public ?string $category = null,
     ) {}
 }
