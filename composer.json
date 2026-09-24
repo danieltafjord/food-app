@@ -20,10 +20,10 @@
         "laravel/framework": "^13.19",
         "laravel/mcp": "^1.0",
         "laravel/passport": "^13.0",
+        "laravel/reverb": "^1.12",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
         "league/flysystem-aws-s3-v3": "^3.35",
-        "pusher/pusher-php-server": "^7.3",
         "spatie/laravel-data": "^4.23",
         "spatie/laravel-typescript-transformer": "^3.2",
         "srwiez/thumbhash": "^1.5"
