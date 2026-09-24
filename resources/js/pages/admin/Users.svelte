@@ -1,21 +1,25 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
     import {
         index as usersRoute,
         show as showUser,
     } from '@/routes/admin/users';
 
-    export const layout = {
-        breadcrumbs: [
-            {
-                title: 'Admin',
-                href: usersRoute(),
-            },
-            {
-                title: 'Users',
-                href: usersRoute(),
-            },
-        ],
-    };
+    export const layout = [
+        AppLayout,
+        {
+            breadcrumbs: [
+                {
+                    title: 'Admin',
+                    href: usersRoute(),
+                },
+                {
+                    title: 'Users',
+                    href: usersRoute(),
+                },
+            ],
+        },
+    ];
 </script>
 
 <script lang="ts">
@@ -717,5 +721,6 @@
         paginator={users}
         {pageSizes}
         onPageSize={(perPage) => applyFilters({ per_page: perPage })}
+        only={['users', 'filters']}
     />
 {/snippet}

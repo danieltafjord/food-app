@@ -79,7 +79,7 @@ it('supports catalogue and ad-hoc shopping list items', function () {
     $list->items()->create(['ingredient_id' => $ingredient->id, 'quantity' => 3, 'unit' => 'pcs']);
     $list->items()->create(['name' => 'Aluminium foil', 'quantity' => 1, 'unit' => 'pcs']);
 
-    expect($list->items)->toHaveCount(1 + 1)
+    expect($list->load('items.ingredient')->items)->toHaveCount(1 + 1)
         ->and($list->items->firstWhere('name', 'Aluminium foil')->ingredient)->toBeNull()
         ->and($list->items->first()->is_checked)->toBeFalse();
 });

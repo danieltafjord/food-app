@@ -16,6 +16,8 @@ trait TracksContentAuthors
 
     protected bool $skipContentAttribution = false;
 
+    protected bool $storedCopyIsCurrent = false;
+
     /** @return array<string, mixed> */
     abstract public function contentErasureDefaults(): array;
 
@@ -35,6 +37,8 @@ trait TracksContentAuthors
             }
             $authorId = $model->contentAuthorId ?? Auth::id();
             $model->contentAuthorId = null;
+            $loadedUnderLock = $model->storedCopyIsCurrent;
+            $model->storedCopyIsCurrent = false;
             if ($authorId === null) {
                 return;
             }
@@ -43,7 +47,9 @@ trait TracksContentAuthors
             }
             $fields = array_keys(array_intersect_key($model->getDirty(), $model->contentErasureDefaults()));
             if ($model->exists && $fields !== []) {
-                $stored = $model->newQueryWithoutScopes()->find($model->getKey());
+                // A row read while holding its household's lock is already the
+                // stored copy: erasures take that lock before changing a row.
+                $stored = $loadedUnderLock ? null : $model->newQueryWithoutScopes()->find($model->getKey());
                 if ($stored !== null && (int) $stored->erasure_version > (int) $model->getOriginal('erasure_version')) {
                     abort(409, 'This content changed after an account deletion. Refresh it before editing.');
                 }
@@ -65,6 +71,17 @@ trait TracksContentAuthors
     public function attributeContentTo(int $userId): static
     {
         $this->contentAuthorId = $userId;
+
+        return $this;
+    }
+
+    /**
+     * Skip re-reading the stored row before saving: the caller loaded it while
+     * holding the household lock, so no erasure can have changed it since.
+     */
+    public function loadedUnderHouseholdLock(): static
+    {
+        $this->storedCopyIsCurrent = true;
 
         return $this;
     }

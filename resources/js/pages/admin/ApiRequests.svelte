@@ -1,22 +1,26 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
     import { analytics as analyticsRoute } from '@/routes/admin';
     import {
         index as apiRequestsRoute,
         show as showApiRequest,
     } from '@/routes/admin/api-requests';
 
-    export const layout = {
-        breadcrumbs: [
-            {
-                title: 'Admin',
-                href: analyticsRoute(),
-            },
-            {
-                title: 'API requests',
-                href: apiRequestsRoute(),
-            },
-        ],
-    };
+    export const layout = [
+        AppLayout,
+        {
+            breadcrumbs: [
+                {
+                    title: 'Admin',
+                    href: analyticsRoute(),
+                },
+                {
+                    title: 'API requests',
+                    href: apiRequestsRoute(),
+                },
+            ],
+        },
+    ];
 </script>
 
 <script lang="ts">
@@ -458,5 +462,6 @@
         paginator={requests}
         {pageSizes}
         onPageSize={(perPage) => applyFilters({ per_page: perPage })}
+        only={['requests', 'filters']}
     />
 {/snippet}

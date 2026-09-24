@@ -3,6 +3,8 @@
 use App\Actions\Sync\AllocateSyncVersion;
 use App\Actions\Users\DeleteAccount;
 use App\Enums\HouseholdRole;
+use App\Models\AiRequest;
+use App\Models\ApiRequest;
 use App\Models\Dinner;
 use App\Models\DinnerItem;
 use App\Models\DinnerPlan;
@@ -211,4 +213,21 @@ it('deletes owned oauth clients and their grants without affecting first party c
     $this->assertModelMissing($refresh);
     $this->assertModelExists($firstPartyClient);
     $this->assertModelExists($otherUser);
+});
+
+it('removes the user\'s request logs and stored AI bodies but keeps anonymous usage totals', function () {
+    [$user] = ownerWithHousehold();
+    $other = User::factory()->create();
+    ApiRequest::factory()->for($user)->create(['request_body' => '{"email": "private@example.com"}']);
+    $otherLog = ApiRequest::factory()->for($other)->create();
+    $aiRequest = AiRequest::factory()->for($user)->create(['request' => ['name' => 'Pak choi'], 'response' => ['category' => 'produce'], 'cost' => 0.0004]);
+
+    app(DeleteAccount::class)->handle($user);
+
+    expect(ApiRequest::query()->pluck('id')->all())->toBe([$otherLog->id]);
+    expect($aiRequest->refresh())
+        ->user_id->toBeNull()
+        ->request->toBeNull()
+        ->response->toBeNull()
+        ->cost->toBe(0.0004);
 });

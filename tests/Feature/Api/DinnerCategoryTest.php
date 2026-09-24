@@ -33,6 +33,11 @@ it('scopes category visibility edits and assignments to the active household', f
     $this->postJson('/api/v1/dinners', ['name' => 'Soup', 'category' => $category->uuid])->assertUnprocessable();
 });
 
+it('answers 404 rather than a database error for a category id that is not a uuid', function () {
+    $this->patchJson('/api/v1/dinner-categories/produce', ['name' => 'Changed'])->assertNotFound();
+    $this->deleteJson('/api/v1/dinner-categories/produce')->assertNotFound();
+});
+
 it('validates custom category names', function (mixed $name) {
     $this->postJson('/api/v1/dinner-categories', ['name' => $name])->assertUnprocessable()->assertJsonValidationErrors('name');
 })->with(['', '   ', str_repeat('x', 81), [['not a name']]]);

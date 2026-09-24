@@ -1,18 +1,22 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
     import { index as usersRoute } from '@/routes/admin/users';
 
-    export const layout = {
-        breadcrumbs: [
-            {
-                title: 'Admin',
-                href: usersRoute(),
-            },
-            {
-                title: 'Users',
-                href: usersRoute(),
-            },
-        ],
-    };
+    export const layout = [
+        AppLayout,
+        {
+            breadcrumbs: [
+                {
+                    title: 'Admin',
+                    href: usersRoute(),
+                },
+                {
+                    title: 'Users',
+                    href: usersRoute(),
+                },
+            ],
+        },
+    ];
 </script>
 
 <script lang="ts">

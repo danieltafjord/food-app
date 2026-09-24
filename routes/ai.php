@@ -1,6 +1,7 @@
 <?php
 
 use App\Mcp\Servers\HandlelistaServer;
+use Illuminate\Support\Facades\Route;
 use Laravel\Mcp\Facades\Mcp;
 
 /*
@@ -9,7 +10,7 @@ use Laravel\Mcp\Facades\Mcp;
  * for one household). Both pin the household; each tool checks the token's
  * read/write permission itself because every MCP call is a POST.
  */
-Mcp::oauthRoutes();
+Route::middleware('throttle:oauth-registration')->group(fn () => Mcp::oauthRoutes());
 
 Mcp::web('/mcp', HandlelistaServer::class)
     ->middleware(['api.log:mcp', 'auth:api', 'active:api', 'throttle:public-api', 'api.transaction', 'api.token:tools']);

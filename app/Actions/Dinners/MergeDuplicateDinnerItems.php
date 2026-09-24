@@ -11,10 +11,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class MergeDuplicateDinnerItems
 {
-    /** Called under the household lock. The oldest identity retains the newest content. */
-    public function handle(Household $household, SyncBatchState $state): void
+    /**
+     * Called under the household lock. The oldest identity retains the newest
+     * content. Only the given dinners are checked when a batch names them;
+     * duplicates can only appear where dinner items were written.
+     *
+     * @param  list<int>|null  $dinnerIds
+     */
+    public function handle(Household $household, SyncBatchState $state, ?array $dinnerIds = null): void
     {
-        $groups = DinnerItem::query()->whereIn('dinner_id', $household->dinners()->select('id'))
+        $groups = DinnerItem::query()
+            ->when($dinnerIds === null, fn ($query) => $query->whereIn('dinner_id', $household->dinners()->select('id')))
+            ->when($dinnerIds !== null, fn ($query) => $query->whereIn('dinner_id', $dinnerIds))
             ->orderBy('id')->get()->groupBy(fn (DinnerItem $item) => $item->dinner_id.':'.$item->ingredient_id.':'.(GenerateShoppingListFromPlan::normalizeUnit($item->unit) ?? ''));
         foreach ($groups as $items) {
             if ($items->count() < 2) {

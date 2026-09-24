@@ -33,8 +33,10 @@ class StoreDinnerImage
         if (min($image->width(), $image->height()) < 64) {
             throw ValidationException::withMessages(['image' => 'The image is too small.']);
         }
-        $edge = min($image->width(), $image->height());
-        $image->cover($edge, $edge);
+        // Crop straight to the largest variant: the smaller ones and the
+        // thumbhash are then scaled from that instead of the full-size photo.
+        $side = min($image->width(), $image->height(), max(DinnerImage::SIZES));
+        $image->cover($side, $side);
 
         $path = 'dinner-images/'.Str::random(32);
         $disk = Storage::disk(DinnerImage::disk());
@@ -81,6 +83,8 @@ class StoreDinnerImage
 
     private function manager(): ImageManager
     {
-        return extension_loaded('imagick') ? ImageManager::imagick() : ImageManager::gd();
+        // Files are public: never publish the camera's EXIF/XMP (GPS position,
+        // device) along with the picture. GD drops it anyway; Imagick keeps it.
+        return extension_loaded('imagick') ? ImageManager::imagick(strip: true) : ImageManager::gd(strip: true);
     }
 }

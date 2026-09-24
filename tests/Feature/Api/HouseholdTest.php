@@ -1,5 +1,7 @@
 <?php
 
+use App\Actions\ApiTokens\CreateApiToken;
+use App\Actions\Households\DeleteHousehold;
 use App\Enums\HouseholdRole;
 use App\Models\Household;
 use App\Models\User;
@@ -129,6 +131,24 @@ it('lets owners delete a household', function () {
 
     $this->deleteJson("/api/v1/households/{$household->id}")->assertNoContent();
     $this->assertModelMissing($household);
+});
+
+it('revokes API tokens pinned to a deleted household instead of letting them reach the app API', function () {
+    [$owner, $other] = ownerWithHousehold();
+    $pinned = Household::factory()->create();
+    $pinned->members()->attach($owner, ['role' => HouseholdRole::Owner->value]);
+    $readOnlyToken = app(CreateApiToken::class)->handle($owner, $pinned, 'Integration', false)->accessToken;
+
+    $this->withToken($readOnlyToken)->getJson('/api/v1/households')->assertForbidden();
+
+    app(DeleteHousehold::class)->handle($pinned);
+
+    // Guards cache the resolved user within one test; production requests start fresh.
+    app('auth')->forgetGuards();
+    $this->withToken($readOnlyToken)->getJson('/api/v1/households')->assertUnauthorized();
+    app('auth')->forgetGuards();
+    $this->withToken($readOnlyToken)->postJson('/api/v1/ingredients', ['name' => 'Written by a read-only token'])->assertUnauthorized();
+    expect($other->ingredients()->count())->toBe(0);
 });
 
 it('switches the active household', function () {

@@ -1,14 +1,22 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
+    import SettingsLayout from '@/layouts/settings/Layout.svelte';
     import { index } from '@/routes/api-tokens';
 
-    export const layout = {
-        breadcrumbs: [
+    export const layout = [
+        [
+            AppLayout,
             {
-                title: 'API tokens',
-                href: index(),
+                breadcrumbs: [
+                    {
+                        title: 'API tokens',
+                        href: index(),
+                    },
+                ],
             },
         ],
-    };
+        SettingsLayout,
+    ];
 </script>
 
 <script lang="ts">

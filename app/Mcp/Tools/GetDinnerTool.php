@@ -6,6 +6,7 @@ use App\Data\DinnerItemData;
 use App\Models\DinnerItem;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Str;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
@@ -22,7 +23,7 @@ class GetDinnerTool extends PaginatedHouseholdTool
         $page = $this->page($request, $record->items()->with('ingredient'),
             fn (DinnerItem $row) => DinnerItemData::fromItem($row)->toArray(), searchable: false);
 
-        return Response::json(['record' => ['id' => $record->id, 'name' => $record->name, 'default_servings' => $record->default_servings, 'category' => $record->category, 'category_name' => $this->household()->dinnerCategories()->where('uuid', $record->category)->value('name') ?? $record->category, 'notes' => $record->notes], ...$page]);
+        return Response::json(['record' => ['id' => $record->id, 'name' => $record->name, 'default_servings' => $record->default_servings, 'category' => $record->category, 'category_name' => (Str::isUuid((string) $record->category) ? $this->household()->dinnerCategories()->where('uuid', $record->category)->value('name') : null) ?? $record->category, 'notes' => $record->notes], ...$page]);
     }
 
     /** @return array<string, Type> */

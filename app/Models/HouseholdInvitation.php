@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Enums\HouseholdRole;
 use Database\Factories\HouseholdInvitationFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -12,6 +14,11 @@ class HouseholdInvitation extends Model
 {
     /** @use HasFactory<HouseholdInvitationFactory> */
     use HasFactory;
+
+    use MassPrunable;
+
+    /** Days an expired invitation (and the invitee's address) is kept for the household's history. */
+    public const RETENTION_DAYS_AFTER_EXPIRY = 30;
 
     /** @var list<string> */
     protected $fillable = [
@@ -36,6 +43,12 @@ class HouseholdInvitation extends Model
             'declined_at' => 'datetime',
             'expires_at' => 'datetime',
         ];
+    }
+
+    /** @return Builder<static> */
+    public function prunable(): Builder
+    {
+        return static::query()->where('expires_at', '<', now()->subDays(self::RETENTION_DAYS_AFTER_EXPIRY));
     }
 
     /** @return BelongsTo<Household, $this> */

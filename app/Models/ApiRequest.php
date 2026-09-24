@@ -6,8 +6,8 @@ use Database\Factories\ApiRequestFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Prunable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
@@ -21,7 +21,7 @@ class ApiRequest extends Model
     /** @use HasFactory<ApiRequestFactory> */
     use HasFactory;
 
-    use Prunable;
+    use MassPrunable;
 
     public const UPDATED_AT = null;
 
@@ -74,7 +74,10 @@ class ApiRequest extends Model
             ->where(fn ($query) => $query->where('status', '>=', 500)->orWhereNotNull('error'))
             ->latest('id')
             ->limit(2000)
-            ->get(['id', 'method', 'path', 'route', 'error', 'created_at']);
+            // Only the leading "Class: message" line is needed, not the stored trace.
+            ->select(['id', 'method', 'path', 'route', 'created_at'])
+            ->selectRaw('substr(error, 1, 300) AS error')
+            ->get();
 
         return $rows
             ->groupBy(fn (self $row) => $row->method.' '.($row->route ?? $row->path).'|'.self::exceptionClass($row->error))

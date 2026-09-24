@@ -1,18 +1,22 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
     import { edit } from '@/routes/admin/ai';
 
-    export const layout = {
-        breadcrumbs: [
-            {
-                title: 'Admin',
-                href: edit(),
-            },
-            {
-                title: 'AI models',
-                href: edit(),
-            },
-        ],
-    };
+    export const layout = [
+        AppLayout,
+        {
+            breadcrumbs: [
+                {
+                    title: 'Admin',
+                    href: edit(),
+                },
+                {
+                    title: 'AI models',
+                    href: edit(),
+                },
+            ],
+        },
+    ];
 </script>
 
 <script lang="ts">

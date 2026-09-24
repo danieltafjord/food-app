@@ -10,16 +10,19 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the analytics page aggregates app and AI usage over the selected window', function () {
+    // Both households were last written ten days ago; one gets a write today.
+    $this->travelTo('2026-09-12 10:00:00');
+    Dinner::factory()->for(Household::factory())->create();
+    $returningHousehold = Household::factory()->create();
+    Dinner::factory()->for($returningHousehold)->create();
     $this->travelTo('2026-09-22 10:00:00');
+    Dinner::factory()->for($returningHousehold)->create();
+
     $admin = User::factory()->admin()->create(['ai_suggestions_enabled' => true]);
     [$user, $household] = ownerWithHousehold();
     User::factory()->unverified()->create(['created_at' => now()->subDays(40)]);
     Dinner::factory()->for($household)->create();
     ShoppingList::factory()->for($household)->create();
-    $staleHousehold = Household::factory()->create();
-    $staleDinner = Dinner::factory()->for($staleHousehold)->create();
-    // The sync hook stamps synced_at on save, so backdate it directly.
-    DB::table('dinners')->where('id', $staleDinner->id)->update(['synced_at' => now()->subDays(10)]);
 
     AiRequest::factory()->count(2)->for($user)->for($household)->create(['feature' => 'suggestions', 'model' => 'google/gemini-3.5-flash-lite', 'duration_ms' => 400, 'input_tokens' => 100, 'output_tokens' => 10, 'cost' => 0.001]);
     AiRequest::factory()->cached()->for($user)->for($household)->create(['feature' => 'suggestions', 'model' => 'google/gemini-3.5-flash-lite']);
@@ -41,8 +44,8 @@ test('the analytics page aggregates app and AI usage over the selected window', 
             ->where('analytics.app.totals.users', 3)
             ->where('analytics.app.totals.verified_users', 2)
             ->where('analytics.app.totals.new_users', 2)
-            ->where('analytics.app.totals.households', 2)
-            ->where('analytics.app.totals.active_households', 1)
+            ->where('analytics.app.totals.households', 3)
+            ->where('analytics.app.totals.active_households', 2)
             ->has('analytics.app.signups', 30)
             ->where('analytics.app.signups.29', ['day' => '2026-09-22', 'value' => 2])
             ->where('analytics.ai.totals.requests', 4)

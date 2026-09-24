@@ -46,7 +46,10 @@ class AuthenticateApiToken
             abort(Response::HTTP_FORBIDDEN, "This token is missing the \"{$requiredScope->value}\" permission.");
         }
 
-        $apiToken->forceFill(['last_used_at' => now()])->saveQuietly();
+        // Minute precision is plenty for "last used", and spares a write per call.
+        if ($apiToken->last_used_at === null || $apiToken->last_used_at->lt(now()->subMinute())) {
+            $apiToken->forceFill(['last_used_at' => now()])->saveQuietly();
+        }
 
         $request->attributes->set('current_household', $household);
         $request->attributes->set('api_token', $apiToken);

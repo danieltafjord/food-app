@@ -18,12 +18,16 @@ use Throwable;
  * in `api_requests` so admins can inspect what a client sent and what it got
  * back when something fails. Runs first in the stack so rejected requests
  * (401, 403, 429) are logged too, and outside the write transaction so the
- * row survives a rollback. Logging must never break the request itself.
+ * row survives a rollback. The row is written after the response has been
+ * sent, so logging never delays a client, and must never break the request.
  */
 class LogApiRequest
 {
     /** Longest body kept per request or response. */
     public const MAX_BODY_BYTES = 16384;
+
+    /** Unauthenticated callers can send anything, so keep only enough to see what they tried. */
+    public const MAX_ANONYMOUS_BODY_BYTES = 1024;
 
     /** Body fields whose values are never stored. */
     private const SECRET_FIELDS = ['password', 'current_password', 'password_confirmation', 'token', 'access_token', 'refresh_token', 'client_secret', 'secret', 'code', 'authorization', 'plain_text_token'];
@@ -39,18 +43,25 @@ class LogApiRequest
 
         $response = $next($request);
         $response->headers->set('X-Request-Id', $requestId);
+        $durationMs = (int) round((hrtime(true) - $startedAt) / 1_000_000);
 
-        try {
-            $this->record($request, $response, $channel, $startedAt);
-        } catch (Throwable $e) {
-            report($e);
-        }
+        // `always`: deferred work is otherwise skipped for 4xx and 5xx responses,
+        // the ones most worth logging.
+        defer(function () use ($request, $response, $channel, $durationMs): void {
+            try {
+                $this->record($request, $response, $channel, $durationMs);
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }, always: true);
 
         return $response;
     }
 
-    private function record(Request $request, Response $response, string $channel, int $startedAt): void
+    private function record(Request $request, Response $response, string $channel, int $durationMs): void
     {
+        $userId = $request->user('api')?->id;
+        $maxBytes = $userId === null ? self::MAX_ANONYMOUS_BODY_BYTES : self::MAX_BODY_BYTES;
         $household = $request->attributes->get('current_household');
         $apiToken = $request->attributes->get('api_token');
         $exception = $response instanceof HttpResponse || $response instanceof JsonResponse ? $response->exception : null;
@@ -58,24 +69,24 @@ class LogApiRequest
         ApiRequest::query()->create([
             'request_id' => $request->attributes->get(self::REQUEST_ID),
             'channel' => $channel,
-            'user_id' => $request->user('api')?->id,
+            'user_id' => $userId,
             'household_id' => $household instanceof Household ? $household->id : null,
             'api_token_detail_id' => $apiToken instanceof ApiTokenDetail ? $apiToken->id : null,
             'method' => $request->getMethod(),
             'path' => mb_substr($request->path(), 0, 255),
             'route' => $request->route()?->getName() ? mb_substr((string) $request->route()->getName(), 0, 120) : null,
             'status' => $response->getStatusCode(),
-            'duration_ms' => (int) round((hrtime(true) - $startedAt) / 1_000_000),
+            'duration_ms' => $durationMs,
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent() ? mb_substr($request->userAgent(), 0, 255) : null,
-            'request_body' => $this->requestBody($request),
-            'response_body' => $this->truncate($this->responseContent($response)),
-            'error' => $exception instanceof Throwable ? $this->describe($exception) : null,
+            'request_body' => $this->requestBody($request, $maxBytes),
+            'response_body' => $this->responseContent($response, $maxBytes),
+            'error' => $exception instanceof Throwable ? $this->describe($exception, withTrace: $response->getStatusCode() >= 500) : null,
             'created_at' => now(),
         ]);
     }
 
-    private function requestBody(Request $request): ?string
+    private function requestBody(Request $request, int $maxBytes): ?string
     {
         $body = $request->isJson() ? $request->json()->all() : $request->request->all();
         $input = $body;
@@ -85,13 +96,13 @@ class LogApiRequest
         if ($input === []) {
             $raw = $request->getContent();
 
-            return $raw === '' ? null : $this->truncate($raw);
+            return $raw === '' ? null : $this->truncate($raw, $maxBytes);
         }
 
-        return $this->truncate(json_encode($this->redact($input), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: null);
+        return $this->readable($this->redact($input), $maxBytes);
     }
 
-    private function responseContent(Response $response): ?string
+    private function responseContent(Response $response, int $maxBytes): ?string
     {
         if (! $response instanceof HttpResponse && ! $response instanceof JsonResponse) {
             // Streamed and binary responses cannot be read back.
@@ -101,11 +112,33 @@ class LogApiRequest
         if ($content === false || $content === '') {
             return null;
         }
+        // Only a body that is kept whole is worth decoding to pretty-print: a
+        // first sync can answer with megabytes of JSON.
+        if (strlen($content) > $maxBytes) {
+            return $this->truncate($content, $maxBytes);
+        }
         $decoded = json_decode($content, true);
 
-        return is_array($decoded)
-            ? (json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: $content)
-            : $content;
+        return is_array($decoded) ? $this->readable($decoded, $maxBytes) ?? $content : $content;
+    }
+
+    /**
+     * Pretty-printed JSON when it fits, else the compact encoding cut to size.
+     *
+     * @param  array<array-key, mixed>  $value
+     */
+    private function readable(array $value, int $maxBytes): ?string
+    {
+        $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+        $compact = json_encode($value, $flags);
+        if ($compact === false) {
+            return null;
+        }
+        if (strlen($compact) > $maxBytes) {
+            return $this->truncate($compact, $maxBytes);
+        }
+
+        return $this->truncate(json_encode($value, $flags | JSON_PRETTY_PRINT) ?: $compact, $maxBytes);
     }
 
     /**
@@ -125,23 +158,26 @@ class LogApiRequest
         return $input;
     }
 
-    private function truncate(?string $value): ?string
+    private function truncate(string $value, int $maxBytes): string
     {
-        if ($value === null) {
-            return null;
-        }
-        if (strlen($value) <= self::MAX_BODY_BYTES) {
+        if (strlen($value) <= $maxBytes) {
             return $value;
         }
 
-        return mb_strcut($value, 0, self::MAX_BODY_BYTES)."\n… [truncated, ".number_format(strlen($value)).' bytes]';
+        return mb_strcut($value, 0, $maxBytes)."\n… [truncated, ".number_format(strlen($value)).' bytes]';
     }
 
-    private function describe(Throwable $exception): string
+    /**
+     * Client errors (401, 404, 422, 429…) are expected: their class and message
+     * say everything, so only server errors keep the location and trace.
+     */
+    private function describe(Throwable $exception, bool $withTrace): string
     {
-        $message = $exception::class.': '.$exception->getMessage()
-            ."\n".$exception->getFile().':'.$exception->getLine()
-            ."\n".$exception->getTraceAsString();
+        $message = $exception::class.': '.$exception->getMessage();
+        if ($withTrace) {
+            $message .= "\n".$exception->getFile().':'.$exception->getLine()
+                ."\n".$exception->getTraceAsString();
+        }
 
         return mb_substr($message, 0, 8000);
     }

@@ -1,14 +1,22 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
+    import SettingsLayout from '@/layouts/settings/Layout.svelte';
     import { edit } from '@/routes/ai-assistance';
 
-    export const layout = {
-        breadcrumbs: [
+    export const layout = [
+        [
+            AppLayout,
             {
-                title: 'AI assistance',
-                href: edit(),
+                breadcrumbs: [
+                    {
+                        title: 'AI assistance',
+                        href: edit(),
+                    },
+                ],
             },
         ],
-    };
+        SettingsLayout,
+    ];
 </script>
 
 <script lang="ts">

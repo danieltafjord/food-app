@@ -2,11 +2,13 @@
 
 namespace App\Actions\Households;
 
+use App\Models\ApiTokenDetail;
 use App\Models\DinnerItem;
 use App\Models\DinnerPlanEntry;
 use App\Models\Household;
 use App\Models\ShoppingListItem;
 use Illuminate\Support\Facades\DB;
+use Laravel\Passport\Passport;
 
 class DeleteHousehold
 {
@@ -40,6 +42,13 @@ class DeleteHousehold
             $household->dinners()->withTrashed()->forceDelete();
 
             $household->ingredients()->withTrashed()->forceDelete();
+
+            // API and MCP tokens are told apart from app tokens by their pin to
+            // this household, which the foreign key deletes with it. Revoke them
+            // first, or they would pass as unrestricted mobile-app tokens.
+            $pinned = ApiTokenDetail::query()->where('household_id', $household->id)->select('token_id');
+            Passport::refreshToken()->newQuery()->whereIn('access_token_id', clone $pinned)->update(['revoked' => true]);
+            Passport::token()->newQuery()->whereIn('id', $pinned)->update(['revoked' => true]);
 
             $household->delete();
         });

@@ -27,7 +27,8 @@ class AppSetting extends Model
 
     public static function get(string $key, mixed $default = null): mixed
     {
-        $stored = Cache::rememberForever(self::cacheKey($key), function () use ($key): array {
+        // Memoized for the request too: a page or AI call reads many settings.
+        $stored = Cache::memo()->rememberForever(self::cacheKey($key), function () use ($key): array {
             $setting = self::query()->find($key);
 
             return ['exists' => $setting !== null, 'value' => $setting?->value];
@@ -39,7 +40,7 @@ class AppSetting extends Model
     public static function set(string $key, mixed $value): void
     {
         self::query()->updateOrCreate(['key' => $key], ['value' => $value]);
-        Cache::forget(self::cacheKey($key));
+        Cache::memo()->forget(self::cacheKey($key));
     }
 
     private static function cacheKey(string $key): string

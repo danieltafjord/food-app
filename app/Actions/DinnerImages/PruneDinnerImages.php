@@ -38,7 +38,11 @@ class PruneDinnerImages
             ))
             ->lazyById()
             ->each(function (DinnerImage $image) use ($disk, &$removed): void {
-                $disk->delete(DinnerImage::files($image->path));
+                // The disks don't throw: keep the row when the files could not be
+                // removed, so the next run retries instead of orphaning them.
+                if (! $disk->delete(DinnerImage::files($image->path))) {
+                    return;
+                }
                 $image->delete();
                 $removed++;
             });

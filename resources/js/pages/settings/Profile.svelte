@@ -1,14 +1,22 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
+    import SettingsLayout from '@/layouts/settings/Layout.svelte';
     import { edit } from '@/routes/profile';
 
-    export const layout = {
-        breadcrumbs: [
+    export const layout = [
+        [
+            AppLayout,
             {
-                title: 'Profile settings',
-                href: edit(),
+                breadcrumbs: [
+                    {
+                        title: 'Profile settings',
+                        href: edit(),
+                    },
+                ],
             },
         ],
-    };
+        SettingsLayout,
+    ];
 </script>
 
 <script lang="ts">

@@ -68,7 +68,7 @@ Route::prefix('v1')
             // Catalogue & recipes
             Route::apiResource('ingredients', IngredientController::class);
             Route::apiResource('dinners', DinnerController::class);
-            Route::apiResource('dinner-categories', DinnerCategoryController::class)->parameters(['dinner-categories' => 'dinnerCategory'])->only(['index', 'store', 'update', 'destroy']);
+            Route::apiResource('dinner-categories', DinnerCategoryController::class)->parameters(['dinner-categories' => 'dinnerCategory'])->only(['index', 'store', 'update', 'destroy'])->whereUuid('dinnerCategory');
 
             // Dinner plans + their scheduled entries
             Route::get('dinner-plans', [DinnerPlanController::class, 'index'])->name('dinner-plans.index');
@@ -112,7 +112,7 @@ Route::prefix('public/v1')
 
         Route::apiResource('ingredients', IngredientController::class);
         Route::apiResource('dinners', DinnerController::class);
-        Route::apiResource('dinner-categories', DinnerCategoryController::class)->parameters(['dinner-categories' => 'dinnerCategory'])->only(['index', 'store', 'update', 'destroy']);
+        Route::apiResource('dinner-categories', DinnerCategoryController::class)->parameters(['dinner-categories' => 'dinnerCategory'])->only(['index', 'store', 'update', 'destroy'])->whereUuid('dinnerCategory');
 
         Route::apiResource('dinner-plans', DinnerPlanController::class)->parameters(['dinner-plans' => 'dinnerPlan']);
         Route::apiResource('dinner-plans.entries', DinnerPlanEntryController::class)

@@ -5,6 +5,8 @@ namespace App\Actions\Users;
 use App\Actions\Households\DeleteHousehold;
 use App\Actions\Sync\AllocateSyncVersion;
 use App\Enums\HouseholdRole;
+use App\Models\AiRequest;
+use App\Models\ApiRequest;
 use App\Models\Dinner;
 use App\Models\DinnerItem;
 use App\Models\DinnerPlan;
@@ -87,6 +89,11 @@ class DeleteAccount
             Password::broker()->deleteToken($user);
             DB::connection(config('session.connection'))->table(config('session.table'))
                 ->where('user_id', $user->id)->delete();
+
+            // The request logs hold what the user sent and got back. AI rows keep
+            // their anonymous usage and cost figures for the totals.
+            ApiRequest::query()->where('user_id', $user->id)->delete();
+            AiRequest::query()->where('user_id', $user->id)->update(['request' => null, 'response' => null, 'error' => null]);
 
             $user->delete();
         });

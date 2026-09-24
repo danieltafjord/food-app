@@ -33,13 +33,20 @@ class AiUsage
     public function status(User $user, Household $household): array
     {
         $result = ['resets_at' => now('UTC')->addDay()->startOfDay()->toISOString()];
-        foreach (['categorization', 'suggestions', 'images'] as $feature) {
+        $features = ['categorization', 'suggestions', 'images'];
+        $scopes = $this->scopes($user, $household);
+        // One read for every feature and scope: the app asks for this often.
+        $usage = DB::table('ai_daily_usage')
+            ->where('day', now('UTC')->toDateString())
+            ->whereIn('scope', array_values($scopes))
+            ->whereIn('feature', $features)
+            ->get(['scope', 'feature', 'used'])
+            ->mapWithKeys(fn (object $row): array => [$row->feature.'|'.$row->scope => (int) $row->used]);
+        foreach ($features as $feature) {
             $remaining = [];
-            foreach ($this->scopes($user, $household) as $kind => $scope) {
+            foreach ($scopes as $kind => $scope) {
                 $limit = $this->configuration->limit($feature, $kind);
-                $used = (int) DB::table('ai_daily_usage')->where([
-                    'day' => now('UTC')->toDateString(), 'scope' => $scope, 'feature' => $feature,
-                ])->value('used');
+                $used = $usage[$feature.'|'.$scope] ?? 0;
                 $remaining[] = max(0, $limit - $used);
                 if ($kind !== 'global') {
                     $result[$feature][$kind] = ['limit' => $limit, 'remaining' => max(0, $limit - $used)];

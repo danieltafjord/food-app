@@ -11,6 +11,7 @@ use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
@@ -78,6 +79,12 @@ class AppServiceProvider extends ServiceProvider
             Limit::perDay(200)->by('dinner-images-day:'.$request->user()->id),
         ]);
 
+        // Dynamic MCP client registration is open to anyone and every call adds
+        // an OAuth client row; discovery reads stay unlimited.
+        RateLimiter::for('oauth-registration', fn (Request $request) => $request->isMethod('POST')
+            ? Limit::perHour(10)->by('oauth-registration:'.$request->ip())
+            : Limit::none());
+
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)
             ->by($request->user()?->id ?: $request->ip()));
 
@@ -128,6 +135,9 @@ class AppServiceProvider extends ServiceProvider
         DB::prohibitDestructiveCommands(
             app()->isProduction(),
         );
+
+        // Surface N+1 queries in development and tests instead of in production latency.
+        Model::preventLazyLoading(! app()->isProduction());
 
         Password::defaults(fn (): ?Password => app()->isProduction()
             ? Password::min(12)

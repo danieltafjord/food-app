@@ -305,8 +305,11 @@ class ApplySyncBatch
                 }
             }
 
-            if (isset($incoming['dinner_items']) || $cursor === null) {
+            // A first sync tidies the whole household; a push only the dinners it wrote items for.
+            if ($cursor === null) {
                 $this->mergeDinnerItems->handle($household, $state);
+            } elseif ($state->writtenDinnerIds() !== []) {
+                $this->mergeDinnerItems->handle($household, $state, $state->writtenDinnerIds());
             }
 
             $outgoing = [];
@@ -487,7 +490,7 @@ class ApplySyncBatch
                     && in_array($model->category_source, ['ai', 'dictionary'], true)
                     && array_key_exists('category', $row)) {
                     $model->forceFill(['category' => $row['category'], 'category_source' => 'user'])
-                        ->attributeContentTo($userId)->stampSync($state->version(), $now);
+                        ->attributeContentTo($userId)->loadedUnderHouseholdLock()->stampSync($state->version(), $now);
                     Model::withoutTimestamps(fn () => $model->save());
                 }
                 // Keep the server copy and send it back so the client converges.
@@ -562,11 +565,15 @@ class ApplySyncBatch
         $attributes['updated_at'] = $incomingUpdatedAt;
         $attributes['deleted_at'] = null; // A newer live version restores a tombstone.
 
-        $model->forceFill($attributes)->attributeContentTo($userId)->stampSync($state->version(), $now);
+        // Every existing row here was read after the batch took the household lock.
+        $model->forceFill($attributes)->attributeContentTo($userId)->loadedUnderHouseholdLock()->stampSync($state->version(), $now);
         Model::withoutTimestamps(fn () => $model->save());
 
         $existing[$uuid] = $model;
         $state->remember($key, $uuid, $model->getKey());
+        if ($key === 'dinner_items') {
+            $state->wroteItemFor((int) $model->getAttribute('dinner_id'));
+        }
         $state->markLive($key, $model->getKey());
         if ($key === 'ingredients') {
             if ($previousName !== null && SyncBatchState::nameKey($previousName) !== SyncBatchState::nameKey($model->name)) {

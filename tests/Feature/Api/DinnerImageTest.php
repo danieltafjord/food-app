@@ -55,6 +55,21 @@ it('stores an upload as square webp variants with a thumbhash', function () {
     ]);
 });
 
+it('does not publish the photo\'s location or other metadata', function () {
+    $photo = new Imagick;
+    $photo->newImage(1600, 1200, new ImagickPixel('orange'));
+    $photo->setImageFormat('jpeg');
+    $photo->setImageProfile('xmp', '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:GPSLatitude="59,54.123N"/></rdf:RDF></x:xmpmeta>');
+    $upload = UploadedFile::fake()->createWithContent('dinner.jpg', $photo->getImageBlob());
+
+    $path = $this->post('/api/v1/dinner-images', ['image' => $upload], ['Accept' => 'application/json'])
+        ->assertCreated()->json('data.path');
+
+    foreach (DinnerImage::SIZES as $size) {
+        expect(Storage::disk('public')->get("{$path}/{$size}.webp"))->not->toContain('GPSLatitude');
+    }
+})->skip(! extension_loaded('imagick'), 'GD never keeps metadata.');
+
 it('rejects files that are not usable images', function (UploadedFile $file) {
     $this->post('/api/v1/dinner-images', ['image' => $file], ['Accept' => 'application/json'])
         ->assertUnprocessable()->assertJsonValidationErrors('image');

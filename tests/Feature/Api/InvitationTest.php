@@ -160,3 +160,13 @@ it('makes the joined household active even when the invitee already has a househ
         ->and($previous->hasMember($invitee))->toBeTrue();
     $this->getJson('/api/v1/me')->assertSuccessful()->assertJsonPath('data.current_household.id', $this->household->id);
 });
+
+it('prunes invitations a month after they expired', function () {
+    $stale = HouseholdInvitation::factory()->for($this->household)->create(['expires_at' => now()->subDays(HouseholdInvitation::RETENTION_DAYS_AFTER_EXPIRY + 1)]);
+    $recent = HouseholdInvitation::factory()->for($this->household)->create(['expires_at' => now()->subDay()]);
+
+    $this->artisan('model:prune', ['--model' => [HouseholdInvitation::class]])->assertSuccessful();
+
+    $this->assertModelMissing($stale);
+    $this->assertModelExists($recent);
+});

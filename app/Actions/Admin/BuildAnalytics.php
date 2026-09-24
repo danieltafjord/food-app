@@ -5,11 +5,7 @@ namespace App\Actions\Admin;
 use App\Actions\Ai\AiConfiguration;
 use App\Models\AiRequest;
 use App\Models\ApiRequest;
-use App\Models\Dinner;
-use App\Models\DinnerPlan;
 use App\Models\Household;
-use App\Models\Ingredient;
-use App\Models\ShoppingList;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -48,10 +44,9 @@ class BuildAnalytics
      */
     private function app(CarbonImmutable $from, $labels): array
     {
-        $weekAgo = CarbonImmutable::now('UTC')->subDays(7);
-        $activeHouseholds = collect([Dinner::class, DinnerPlan::class, ShoppingList::class, Ingredient::class])
-            ->flatMap(fn (string $model) => $model::withTrashed()->where('synced_at', '>=', $weekAgo)->distinct()->pluck('household_id'))
-            ->unique()->count();
+        // Every write to a household's content advances its sync version, which
+        // touches the household row: one small table instead of four large ones.
+        $activeHouseholds = Household::query()->where('updated_at', '>=', CarbonImmutable::now('UTC')->subDays(7))->count();
         $signups = User::query()->where('created_at', '>=', $from)
             ->selectRaw($this->dayExpression('created_at').' as day, count(*) as total')
             ->groupBy('day')->pluck('total', 'day');
@@ -71,12 +66,16 @@ class BuildAnalytics
     /** @return array<string, int> */
     private function api(CarbonImmutable $from): array
     {
-        $requests = ApiRequest::query()->where('created_at', '>=', $from);
+        $totals = ApiRequest::query()->where('created_at', '>=', $from)->toBase()
+            ->selectRaw('count(*) as requests')
+            ->selectRaw('sum(case when status between 400 and 499 then 1 else 0 end) as client_errors')
+            ->selectRaw('sum(case when status >= 500 then 1 else 0 end) as server_errors')
+            ->first();
 
         return [
-            'requests' => (clone $requests)->count(),
-            'client_errors' => (clone $requests)->whereBetween('status', [400, 499])->count(),
-            'server_errors' => (clone $requests)->where('status', '>=', 500)->count(),
+            'requests' => (int) $totals->requests,
+            'client_errors' => (int) $totals->client_errors,
+            'server_errors' => (int) $totals->server_errors,
         ];
     }
 
@@ -100,7 +99,13 @@ class BuildAnalytics
                 'failed' => (int) $rows->where('status', AiRequest::STATUS_FAILED)->sum('total'),
             ];
         })->values()->all();
-        $ok = (clone $requests)->where('status', AiRequest::STATUS_OK);
+        $totals = (clone $requests)->toBase()
+            ->selectRaw('count(*) as requests')
+            ->selectRaw('sum(case when status = ? then 1 else 0 end) as cached', [AiRequest::STATUS_CACHED])
+            ->selectRaw('sum(case when status = ? then 1 else 0 end) as failed', [AiRequest::STATUS_FAILED])
+            ->selectRaw('avg(case when status = ? then duration_ms end) as avg_duration_ms', [AiRequest::STATUS_OK])
+            ->selectRaw('sum(case when status = ? then cost else 0 end) as cost', [AiRequest::STATUS_OK])
+            ->first();
         $today = CarbonImmutable::now('UTC')->toDateString();
         $limits = [];
         foreach (array_keys(AiRequest::featureLabels()) as $feature) {
@@ -114,12 +119,12 @@ class BuildAnalytics
         return [
             'features' => AiRequest::featureLabels(),
             'totals' => [
-                'requests' => (clone $requests)->count(),
-                'provider_requests' => (clone $requests)->where('status', '!=', AiRequest::STATUS_CACHED)->count(),
-                'cached' => (clone $requests)->where('status', AiRequest::STATUS_CACHED)->count(),
-                'failed' => (clone $requests)->where('status', AiRequest::STATUS_FAILED)->count(),
-                'avg_duration_ms' => (int) round((float) (clone $ok)->avg('duration_ms')),
-                'cost' => round((float) (clone $ok)->sum('cost'), 6),
+                'requests' => (int) $totals->requests,
+                'provider_requests' => (int) $totals->requests - (int) $totals->cached,
+                'cached' => (int) $totals->cached,
+                'failed' => (int) $totals->failed,
+                'avg_duration_ms' => (int) round((float) $totals->avg_duration_ms),
+                'cost' => round((float) $totals->cost, 6),
             ],
             'daily' => $byDay,
             'today' => $limits,

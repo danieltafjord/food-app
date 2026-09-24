@@ -49,7 +49,10 @@ class AiRequest extends Model
             ->where('created_at', '>=', now()->subHours($hours))
             ->latest('id')
             ->limit(2000)
-            ->get(['id', 'feature', 'model', 'error', 'created_at']);
+            // Only the leading "Class: message" line is needed, not the whole error.
+            ->select(['id', 'feature', 'model', 'created_at'])
+            ->selectRaw('substr(error, 1, 300) AS error')
+            ->get();
 
         return $rows
             ->groupBy(fn (self $row) => $row->feature.'|'.$row->model.'|'.ApiRequest::exceptionClass($row->error))

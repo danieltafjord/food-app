@@ -9,6 +9,7 @@ use App\Models\ApiRequest;
 use App\Models\Household;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -40,6 +41,10 @@ class AiRequestController extends Controller
         [$sort, $direction] = $this->sorting($request, self::SORTS, 'created');
 
         $requests = AiRequest::query()
+            // The stored request, response and error are only shown on the detail
+            // page; the list needs just the subject's name out of the request.
+            ->select(['id', 'user_id', 'household_id', 'feature', 'model', 'status', 'duration_ms', 'input_tokens', 'output_tokens', 'cost', 'created_at', 'request->name as request_name'])
+            ->selectRaw('CASE WHEN error IS NULL THEN 0 ELSE 1 END AS has_error')
             ->with(['user:id,name,email', 'household:id,name'])
             ->when($status !== 'all', fn ($query) => $query->where('status', $status))
             ->when($feature !== 'all', fn ($query) => $query->where('feature', $feature))
@@ -47,24 +52,29 @@ class AiRequestController extends Controller
             ->when($householdId > 0, fn ($query) => $query->where('household_id', $householdId))
             ->when($search !== '', function ($query) use ($search): void {
                 $query->where(function ($query) use ($search): void {
-                    $query->where('request', 'like', "%{$search}%")
-                        ->orWhere('error', 'like', "%{$search}%")
-                        ->orWhere('model', 'like', "%{$search}%")
-                        ->orWhere('request_id', $search);
+                    // whereLike casts the json column to text on PostgreSQL.
+                    $query->whereLike('request', "%{$search}%")
+                        ->orWhereLike('error', "%{$search}%")
+                        ->orWhereLike('model', "%{$search}%");
+                    // PostgreSQL rejects comparing a uuid column with anything that is not one.
+                    if (Str::isUuid($search)) {
+                        $query->orWhere('request_id', $search);
+                    }
                 });
             })
             ->orderByRaw(self::SORTS[$sort].' '.$direction)
             ->orderBy('id', 'desc')
             ->paginate($this->perPage($request))
             ->withQueryString()
-            ->through(fn (AiRequest $row) => self::row($row));
+            ->through(fn (AiRequest $row) => self::row($row, $row->request_name, (bool) $row->has_error));
 
         $user = $userId > 0 ? User::query()->find($userId, ['id', 'name']) : null;
         $household = $householdId > 0 ? Household::query()->find($householdId, ['id', 'name']) : null;
 
         return Inertia::render('admin/AiRequests', [
             'requests' => $requests,
-            'errorGroups' => AiRequest::recentErrorGroups(),
+            // Lazy, so filtering and paging (partial reloads of `requests`) skip it.
+            'errorGroups' => fn () => AiRequest::recentErrorGroups(),
             'features' => AiRequest::featureLabels(),
             'filters' => [
                 'status' => $status,
@@ -92,7 +102,7 @@ class AiRequestController extends Controller
             : null;
 
         return Inertia::render('admin/AiRequestShow', [
-            'request' => self::row($aiRequest) + [
+            'request' => self::row($aiRequest, $aiRequest->request['name'] ?? null, $aiRequest->error !== null) + [
                 'request_id' => $aiRequest->request_id,
                 'api_request' => $apiRequest ? ['id' => $apiRequest->id, 'status' => $apiRequest->status] : null,
                 'request' => $aiRequest->request,
@@ -107,7 +117,7 @@ class AiRequestController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private static function row(AiRequest $row): array
+    private static function row(AiRequest $row, mixed $subject, bool $hasError): array
     {
         return [
             'id' => $row->id,
@@ -117,19 +127,12 @@ class AiRequestController extends Controller
             'duration_ms' => $row->duration_ms,
             'tokens' => $row->input_tokens + $row->output_tokens,
             'cost' => $row->cost,
-            'summary' => self::summary($row),
-            'has_error' => $row->error !== null,
+            // The ingredient or dinner name the request was about.
+            'summary' => is_string($subject) ? mb_substr($subject, 0, 80) : null,
+            'has_error' => $hasError,
             'user' => $row->user ? ['id' => $row->user->id, 'name' => $row->user->name, 'email' => $row->user->email] : null,
             'household' => $row->household ? ['id' => $row->household->id, 'name' => $row->household->name] : null,
             'created_at' => $row->created_at?->toIso8601String(),
         ];
-    }
-
-    /** The ingredient or dinner name the request was about, for the list view. */
-    private static function summary(AiRequest $row): ?string
-    {
-        $name = $row->request['name'] ?? null;
-
-        return is_string($name) ? mb_substr($name, 0, 80) : null;
     }
 }

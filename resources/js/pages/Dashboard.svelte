@@ -1,14 +1,18 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
     import { dashboard } from '@/routes';
 
-    export const layout = {
-        breadcrumbs: [
-            {
-                title: 'Dashboard',
-                href: dashboard(),
-            },
-        ],
-    };
+    export const layout = [
+        AppLayout,
+        {
+            breadcrumbs: [
+                {
+                    title: 'Dashboard',
+                    href: dashboard(),
+                },
+            ],
+        },
+    ];
 </script>
 
 <script lang="ts">

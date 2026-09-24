@@ -28,11 +28,14 @@
         paginator,
         pageSizes = [],
         onPageSize,
+        only,
     }: {
         paginator: Paginator;
         /** When given with onPageSize, shows the rows-per-page picker. */
         pageSizes?: number[];
         onPageSize?: (perPage: number) => void;
+        /** Props a page change reloads; the rest of the page stays as it is. */
+        only?: string[];
     } = $props();
 
     /**
@@ -110,6 +113,7 @@
             )}
             aria-label="First page"
             preserveScroll
+            {only}
         >
             <ChevronsLeft class="size-4" />
         </Link>
@@ -121,6 +125,7 @@
             )}
             aria-label="Previous page"
             preserveScroll
+            {only}
         >
             <ChevronLeft class="size-4" />
         </Link>
@@ -140,7 +145,8 @@
                     href={pageUrl(page)}
                     class={cn(buttonClass, enabledClass)}
                     aria-label="Page {page}"
-                    preserveScroll>{page}</Link
+                    preserveScroll
+                    {only}>{page}</Link
                 >
             {/if}
         {/each}
@@ -152,6 +158,7 @@
             )}
             aria-label="Next page"
             preserveScroll
+            {only}
         >
             <ChevronRight class="size-4" />
         </Link>
@@ -165,6 +172,7 @@
             )}
             aria-label="Last page"
             preserveScroll
+            {only}
         >
             <ChevronsRight class="size-4" />
         </Link>

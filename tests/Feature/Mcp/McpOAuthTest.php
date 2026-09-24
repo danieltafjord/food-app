@@ -186,3 +186,13 @@ test('a user cannot disconnect another user\'s app', function () {
 
     expect($grant->fresh())->not->toBeNull();
 });
+
+test('dynamic client registration is rate limited per address', function () {
+    $register = fn () => $this->postJson('/oauth/register', ['client_name' => 'Test Agent', 'redirect_uris' => [MCP_REDIRECT_URI]]);
+
+    foreach (range(1, 10) as $attempt) {
+        $register()->assertSuccessful();
+    }
+    $register()->assertTooManyRequests();
+    $this->getJson('/.well-known/oauth-authorization-server')->assertOk();
+});

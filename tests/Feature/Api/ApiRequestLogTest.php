@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\ApiTokens\CreateApiToken;
+use App\Http\Middleware\LogApiRequest;
 use App\Models\ApiRequest;
 use App\Models\ApiTokenDetail;
 use App\Models\Ingredient;
@@ -79,6 +80,15 @@ test('oversized bodies are truncated and query strings are kept', function () {
     $log = ApiRequest::query()->sole();
     expect(strlen($log->request_body))->toBeLessThan(17000);
     expect($log->request_body)->toStartWith('{')->toContain('"query"')->toContain('[truncated, 2');
+});
+
+test('unauthenticated bodies are capped and client errors are stored without a trace', function () {
+    $this->postJson('/api/v1/sync', ['changes' => ['ingredients' => [['name' => str_repeat('x', 20000)]]]])->assertUnauthorized();
+
+    $log = ApiRequest::query()->sole();
+    expect(strlen($log->request_body))->toBeLessThan(LogApiRequest::MAX_ANONYMOUS_BODY_BYTES + 100)
+        ->and($log->request_body)->toContain('[truncated, 2');
+    expect($log->error)->toStartWith('Illuminate\Auth\AuthenticationException: Unauthenticated.')->not->toContain("\n");
 });
 
 test('the request still succeeds when logging fails', function () {

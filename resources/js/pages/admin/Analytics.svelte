@@ -1,18 +1,22 @@
 <script module lang="ts">
+    import AppLayout from '@/layouts/AppLayout.svelte';
     import { analytics as analyticsRoute } from '@/routes/admin';
 
-    export const layout = {
-        breadcrumbs: [
-            {
-                title: 'Admin',
-                href: analyticsRoute(),
-            },
-            {
-                title: 'Analytics',
-                href: analyticsRoute(),
-            },
-        ],
-    };
+    export const layout = [
+        AppLayout,
+        {
+            breadcrumbs: [
+                {
+                    title: 'Admin',
+                    href: analyticsRoute(),
+                },
+                {
+                    title: 'Analytics',
+                    href: analyticsRoute(),
+                },
+            ],
+        },
+    ];
 </script>
 
 <script lang="ts">

@@ -19,7 +19,8 @@ class RunWeekPlanning
         if (! $this->runner->available()) {
             $this->usage->reject('unavailable', 503);
         }
-        $scope = 'planner:'.hash_hmac('sha256', $ip, (string) config('app.key'));
+        // 192 bits of the HMAC is plenty, and keeps the scope inside ai_daily_usage.scope (64 chars).
+        $scope = 'planner:'.substr(hash_hmac('sha256', $ip, (string) config('app.key')), 0, 48);
         $model = $this->configuration->model('suggestions');
         $key = $scope.':v1:'.hash('sha256', json_encode([$model, $this->configuration->reasoningEffort('suggestions'), $context], JSON_THROW_ON_ERROR));
         if (is_array($cached = Cache::get($key))) {

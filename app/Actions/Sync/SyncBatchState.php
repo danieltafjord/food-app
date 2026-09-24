@@ -15,6 +15,9 @@ class SyncBatchState
     /** @var array<string, array<string, int>> resource → uuid → internal id */
     private array $maps = [];
 
+    /** @var array<string, array<string, int>> resource → uuid → id of rows written before that resource's map was loaded */
+    private array $unmapped = [];
+
     /** @var array<string, array<int, string>> resource → internal id → uuid (full or partial) */
     private array $uuids = [];
 
@@ -29,6 +32,9 @@ class SyncBatchState
 
     /** @var array<string, array{id: int, uuid: string}> lower-cased live ingredient name → identity */
     private ?array $ingredientsByName = null;
+
+    /** @var array<int, true> dinners this batch wrote items for */
+    private array $writtenDinnerIds = [];
 
     /** The version stamped on this batch's writes; allocated on the first write. */
     private ?int $version = null;
@@ -105,14 +111,34 @@ class SyncBatchState
         return isset($this->owned[$resource][$id]);
     }
 
-    /** Record a row the batch wrote (or resolved) so later rows can reference it. */
+    /**
+     * Record a row the batch wrote (or resolved) so later rows can reference it.
+     * Loading a resource's full map is deferred until something resolves
+     * through it: leaf rows (shopping list items, plan entries) never are, and
+     * their maps span the household's whole history.
+     */
     public function remember(string $resource, string $uuid, int $id): void
     {
-        $this->map($resource)[$uuid] = $id;
+        if (isset($this->maps[$resource])) {
+            $this->maps[$resource][$uuid] = $id;
+        } else {
+            $this->unmapped[$resource][$uuid] = $id;
+        }
         $this->uuids[$resource][$id] = $uuid;
         if (isset($this->owned[$resource])) {
             $this->owned[$resource][$id] = true;
         }
+    }
+
+    public function wroteItemFor(int $dinnerId): void
+    {
+        $this->writtenDinnerIds[$dinnerId] = true;
+    }
+
+    /** @return list<int> */
+    public function writtenDinnerIds(): array
+    {
+        return array_keys($this->writtenDinnerIds);
     }
 
     /**
@@ -202,7 +228,8 @@ class SyncBatchState
     private function &map(string $resource): array
     {
         if (! isset($this->maps[$resource])) {
-            $this->maps[$resource] = ($this->loadMap)($resource);
+            $this->maps[$resource] = ($this->unmapped[$resource] ?? []) + ($this->loadMap)($resource);
+            unset($this->unmapped[$resource]);
         }
 
         return $this->maps[$resource];

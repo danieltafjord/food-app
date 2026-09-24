@@ -140,7 +140,7 @@ it('returns 503 when disabled even for a cached result', function () {
 
 it('returns 429 when the same caller already has a generation running', function () {
     GenerateWeekDinners::fake();
-    $key = 'planner:'.hash_hmac('sha256', '127.0.0.1', (string) config('app.key')).':lock';
+    $key = 'planner:'.substr(hash_hmac('sha256', '127.0.0.1', (string) config('app.key')), 0, 48).':lock';
     $lock = Cache::lock($key, 70);
     $lock->get();
     try {
