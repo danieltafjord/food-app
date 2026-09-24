@@ -25,6 +25,9 @@ class Dinner extends Model
         'default_servings',
         'notes',
         'category',
+        'emoji',
+        'image_path',
+        'image_thumbhash',
     ];
 
     /** @var array<string, mixed> */
@@ -93,6 +96,7 @@ class Dinner extends Model
     /** @return array<string, mixed> */
     public function contentErasureDefaults(): array
     {
-        return ['name' => 'Recipe', 'default_servings' => 1, 'notes' => null, 'category' => null];
+        return ['name' => 'Recipe', 'default_servings' => 1, 'notes' => null, 'category' => null,
+            'emoji' => null, 'image_path' => null, 'image_thumbhash' => null];
     }
 }

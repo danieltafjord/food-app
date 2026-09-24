@@ -16,6 +16,14 @@ return [
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
+    | Dinner pictures are public files under unguessable paths, so this disk
+    | must serve public URLs (the "public" disk locally, an S3/R2 bucket with
+    | AWS_URL pointing at its CDN domain in production).
+    */
+
+    'media_disk' => env('MEDIA_DISK', 'public'),
+
+    /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------

@@ -33,7 +33,7 @@ class AiUsage
     public function status(User $user, Household $household): array
     {
         $result = ['resets_at' => now('UTC')->addDay()->startOfDay()->toISOString()];
-        foreach (['categorization', 'suggestions'] as $feature) {
+        foreach (['categorization', 'suggestions', 'images'] as $feature) {
             $remaining = [];
             foreach ($this->scopes($user, $household) as $kind => $scope) {
                 $limit = $this->configuration->limit($feature, $kind);

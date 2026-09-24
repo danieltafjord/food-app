@@ -30,7 +30,7 @@ test('the AI request log lists requests newest first with filters', function () 
             ->where('requests.data.2.id', $ok->id)
             ->where('filters', ['status' => 'all', 'feature' => 'all', 'user' => null, 'household' => null, 'search' => '', 'sort' => 'created', 'direction' => 'desc', 'per_page' => 50])
             ->where('pageSizes', [25, 50, 100])
-            ->where('features', ['categorization' => 'Categorization', 'suggestions' => 'Suggestions'])
+            ->where('features', AiRequest::featureLabels())
             ->where('errorGroups', [['feature' => 'suggestions', 'model' => $failed->model, 'exception' => 'RequestException', 'count' => 1, 'latest_id' => $failed->id, 'latest_at' => $failed->created_at->toIso8601String()]])
         );
 

@@ -65,9 +65,17 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function configureRateLimiting(): void
     {
+        RateLimiter::for('week-planning', fn (Request $request) => Limit::perMinute(6)
+            ->by('week-planning:'.$request->ip()));
+
         RateLimiter::for('ai', fn (Request $request) => [
             Limit::perMinute(12)->by('ai-user:'.$request->user()->id),
             Limit::perMinute(30)->by('ai-ip:'.$request->ip()),
+        ]);
+
+        RateLimiter::for('dinner-images', fn (Request $request) => [
+            Limit::perMinute(10)->by('dinner-images:'.$request->user()->id),
+            Limit::perDay(200)->by('dinner-images-day:'.$request->user()->id),
         ]);
 
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)

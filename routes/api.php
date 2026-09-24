@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Auth\DeviceController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\DinnerCategoryController;
 use App\Http\Controllers\Api\V1\DinnerController;
+use App\Http\Controllers\Api\V1\DinnerImageController;
 use App\Http\Controllers\Api\V1\DinnerPlanController;
 use App\Http\Controllers\Api\V1\DinnerPlanEntryController;
 use App\Http\Controllers\Api\V1\GenerateShoppingListController;
@@ -20,7 +21,12 @@ use App\Http\Controllers\Api\V1\ShoppingListController;
 use App\Http\Controllers\Api\V1\ShoppingListItemController;
 use App\Http\Controllers\Api\V1\SwitchHouseholdController;
 use App\Http\Controllers\Api\V1\SyncController;
+use App\Http\Controllers\Api\V1\WeekSuggestionController;
 use Illuminate\Support\Facades\Route;
+
+// Explicit first-use suggestions are available before registration. No household writes or body logging.
+Route::post('v1/ai/plan-week', WeekSuggestionController::class)
+    ->middleware('throttle:week-planning')->name('api.v1.ai.plan-week');
 
 Route::prefix('v1')
     ->name('api.v1.')
@@ -129,4 +135,13 @@ Route::prefix('v1/ai')->name('api.v1.ai.')
         Route::patch('settings', [AiController::class, 'updateSettings'])->name('settings.update');
         Route::post('categorize', [AiController::class, 'categorize'])->middleware('throttle:ai')->name('categorize');
         Route::post('suggest', [AiController::class, 'suggest'])->middleware('throttle:ai')->name('suggest');
+    });
+
+// Picture uploads and generation stay outside the write transaction: image
+// processing and provider calls are slow, and they only add files.
+Route::prefix('v1/dinner-images')->name('api.v1.dinner-images.')
+    ->middleware(['api.log:app', 'auth:api', 'api.app-only', 'throttle:api', 'household.active'])
+    ->group(function () {
+        Route::post('/', [DinnerImageController::class, 'store'])->middleware('throttle:dinner-images')->name('store');
+        Route::post('generate', [DinnerImageController::class, 'generate'])->middleware('throttle:ai')->name('generate');
     });

@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\DinnerImages\PruneDinnerImages;
 use App\Models\AiRequest;
 use App\Models\ApiRequest;
 use Illuminate\Foundation\Inspiring;
@@ -22,6 +23,11 @@ Artisan::command('ai:prune-request-bodies', function () {
         ->update(['request' => null, 'response' => null, 'error' => null]);
 })->purpose('Clear stored AI request and response bodies older than the retention period');
 
+Artisan::command('dinner-images:prune', function (PruneDinnerImages $prune) {
+    $this->info('Removed '.$prune->handle().' unused dinner images.');
+})->purpose('Delete dinner pictures that no dinner uses any more');
+
 Schedule::command('ai:prune-usage')->dailyAt('02:00')->timezone('UTC')->withoutOverlapping();
 Schedule::command('ai:prune-request-bodies')->dailyAt('02:10')->timezone('UTC')->withoutOverlapping();
+Schedule::command('dinner-images:prune')->dailyAt('02:30')->timezone('UTC')->withoutOverlapping();
 Schedule::command('model:prune', ['--model' => [ApiRequest::class]])->dailyAt('02:20')->timezone('UTC')->withoutOverlapping();

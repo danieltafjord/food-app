@@ -33,7 +33,7 @@ class AiRequest extends Model
     /** @return array<string, string> */
     public static function featureLabels(): array
     {
-        return ['categorization' => 'Categorization', 'suggestions' => 'Suggestions'];
+        return ['categorization' => 'Categorization', 'suggestions' => 'Suggestions', 'week_planning' => 'Week planning', 'images' => 'Dinner images'];
     }
 
     /**

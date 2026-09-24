@@ -7,6 +7,7 @@ use App\Enums\DinnerCategory;
 use App\Enums\MealType;
 use App\Models\Concerns\Syncable;
 use App\Models\Dinner;
+use App\Models\DinnerImage;
 use App\Models\DinnerItem;
 use App\Models\DinnerPlan;
 use App\Models\DinnerPlanEntry;
@@ -123,7 +124,7 @@ class ApplySyncBatch
             ],
             'dinners' => [
                 'model' => Dinner::class,
-                'fields' => ['name', 'default_servings', 'notes', 'category'],
+                'fields' => ['name', 'default_servings', 'notes', 'category', 'emoji', 'image_path', 'image_thumbhash'],
                 'fks' => [],
                 'nullableFks' => [],
                 'hasHousehold' => true,
@@ -133,12 +134,18 @@ class ApplySyncBatch
                     'category' => $m->category,
                     'default_servings' => $m->default_servings,
                     'notes' => $m->notes,
+                    'emoji' => $m->emoji,
+                    'image_path' => $m->image_path,
+                    'image_thumbhash' => $m->image_thumbhash,
                 ],
                 'rules' => [
                     'name' => ['required', 'string', 'max:255'],
                     'default_servings' => ['required', 'integer', 'min:1', 'max:99'],
                     'category' => ['sometimes', 'nullable', 'string', 'max:36'],
                     'notes' => ['nullable', 'string', 'max:5000'],
+                    'emoji' => ['sometimes', 'nullable', 'string', 'max:32', 'not_regex:/[\\s<>]/u'],
+                    'image_path' => ['sometimes', 'nullable', 'string', 'regex:'.DinnerImage::PATH_PATTERN],
+                    'image_thumbhash' => ['sometimes', 'nullable', 'required_with:image_path', 'string', 'max:64', 'regex:/^[A-Za-z0-9+\/=]+$/'],
                 ],
             ],
             'dinner_items' => [
@@ -521,6 +528,13 @@ class ApplySyncBatch
                 && ! $household->dinnerCategories()->where('uuid', $row['category'])->exists()) {
                 $row['category'] = null;
             }
+        }
+        // A picture can only be attached from the household's own uploads.
+        if ($key === 'dinners' && isset($row['image_path']) && $row['image_path'] !== $model->image_path
+            && ! DinnerImage::query()->where('household_id', $household->id)->where('path', $row['image_path'])->exists()) {
+            $state->reject($key, $uuid, 'invalid', 'Unknown image.');
+
+            return;
         }
         if ($key === 'dinner_categories') {
             $row['name'] = preg_replace('/\s+/u', ' ', trim($row['name']));
