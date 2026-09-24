@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\InvitationAcceptanceController;
 use App\Http\Controllers\Api\V1\InvitationController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\MemberController;
+use App\Http\Controllers\Api\V1\RealtimeController;
 use App\Http\Controllers\Api\V1\ShoppingListController;
 use App\Http\Controllers\Api\V1\ShoppingListItemController;
 use App\Http\Controllers\Api\V1\SwitchHouseholdController;
@@ -38,6 +39,7 @@ Route::prefix('v1')
         Route::post('auth/logout', LogoutController::class)->name('auth.logout');
         Route::get('auth/devices', [DeviceController::class, 'index'])->name('auth.devices.index');
         Route::delete('auth/devices/{token}', [DeviceController::class, 'destroy'])->name('auth.devices.destroy');
+        Route::get('realtime', RealtimeController::class)->name('realtime');
 
         // Households the user belongs to
         Route::get('households', [HouseholdController::class, 'index'])->name('households.index');

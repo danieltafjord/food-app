@@ -23,6 +23,11 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // Mobile devices authorize live-sync channels with their API token.
+    ->withBroadcasting(__DIR__.'/../routes/channels.php', [
+        'prefix' => 'api/v1',
+        'middleware' => ['api', 'auth:api', 'api.app-only', 'throttle:api'],
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         // Behind a TLS-terminating proxy/load balancer: keep generated links on
         // https and rate-limit by the real client IP, not the proxy's.

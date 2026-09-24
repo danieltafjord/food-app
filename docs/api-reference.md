@@ -266,3 +266,25 @@ Response (`200`, not wrapped in `data`):
   duplicate.
 - REST writes and deletes are versioned and tombstoned too, so a device with a cursor sees
   them on its next pull.
+
+## Live sync
+
+With `BROADCAST_CONNECTION=reverb`, every committed write (sync batch, REST, public API)
+rings a doorbell over Laravel Reverb, so other devices pull at once instead of on their
+next poll. The doorbell carries no rows. Devices still pull through `POST /sync`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/realtime` | Where to open the socket: `{ key, host, port, scheme }`, or `null` when live sync is off |
+| `POST` | `/broadcasting/auth` | Authorize a channel for this socket (`socket_id`, `channel_name`); app tokens only |
+
+Channels, all limited to members of the household:
+
+- `private-household.{id}`: event `synced` with `{ "version": 42 }`, sent after the write
+  commits. A device ignores a version at or below its cursor. The device that made the
+  write sends `X-Socket-ID` with its sync request and is skipped.
+- `presence-household.{id}.list.{uuid}`: who has a shopping list open.
+- `presence-household.{id}.week.{YYYY-MM-DD}`: who is looking at a week of the plan (its Monday).
+
+Member info is `{ id, name }`. A failed broadcast is only reported and never fails the
+write. Devices without a socket keep polling.
