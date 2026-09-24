@@ -22,7 +22,14 @@ class ShoppingList extends Model
         'dinner_plan_id',
         'created_by_user_id',
         'name',
+        'archived_at',
     ];
+
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return ['archived_at' => 'datetime'];
+    }
 
     /** @return BelongsTo<Household, $this> */
     public function household(): BelongsTo

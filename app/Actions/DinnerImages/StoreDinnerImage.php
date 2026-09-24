@@ -46,8 +46,10 @@ class StoreDinnerImage
             foreach (array_reverse(DinnerImage::SIZES) as $size) {
                 $encoded = (clone $image)->resize($size, $size)->toWebp(quality: $size <= 160 ? 75 : 80)->toString();
                 $file = $path.'/'.$size.'.webp';
+                // No per-file visibility: the local `public` disk sets it in its
+                // config, and a Laravel Cloud (Cloudflare R2) bucket is public as
+                // a whole and rejects the per-object ACL with NotImplemented.
                 $stored = $disk->put($file, $encoded, [
-                    'visibility' => 'public',
                     'ContentType' => 'image/webp',
                     'CacheControl' => 'public, max-age=31536000, immutable',
                 ]);

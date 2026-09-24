@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Rules\DinnerCategoryReference;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -210,17 +211,19 @@ class ApplySyncBatch
             ],
             'shopping_lists' => [
                 'model' => ShoppingList::class,
-                'fields' => ['name'],
+                'fields' => ['name', 'archived_at'],
                 'fks' => ['dinner_plan_id' => 'dinner_plans'],
                 'nullableFks' => ['dinner_plan_id'],
                 'hasHousehold' => true,
                 'query' => fn (Household $h, bool $liveParents): Builder => $h->shoppingLists()->getQuery(),
                 'serialize' => fn (ShoppingList $m): array => [
                     'name' => $m->name,
+                    'archived_at' => $m->archived_at?->toISOString(),
                 ],
                 'rules' => [
                     'dinner_plan_id' => ['nullable', 'uuid'],
                     'name' => ['required', 'string', 'max:255'],
+                    'archived_at' => ['sometimes', 'nullable', 'date'],
                 ],
             ],
             'shopping_list_items' => [
@@ -259,12 +262,18 @@ class ApplySyncBatch
      *     changes: array<string, array<int, array<string, mixed>>>,
      *     rejected: array<string, array<int, array{id: ?string, code: string, message: string}>>,
      *     remaps: array<string, array<string, string>>,
+     *     next_page?: string|null,
      * }
      */
-    public function handle(Household $household, User $user, ?int $cursor, array $changes): array
+    public function handle(Household $household, User $user, ?int $cursor, array $changes, bool $paged = false, ?string $page = null): array
     {
         $resources = $this->resources();
         $this->assertBatchSize($changes);
+        // A first sync may download the household in pages. The first page
+        // does everything an unpaged first sync does (push, merge, lock);
+        // later pages only read on from where the previous one stopped.
+        $paged = $cursor === null && $paged;
+        $continuation = $paged ? $this->decodePage($page, count($resources)) : null;
 
         $incoming = [];
         foreach ($resources as $key => $resource) {
@@ -288,12 +297,13 @@ class ApplySyncBatch
             ];
         }
 
-        return DB::transaction(function () use ($household, $user, $cursor, $incoming, $resources): array {
+        return DB::transaction(function () use ($household, $user, $cursor, $incoming, $resources, $paged, $continuation): array {
             $now = CarbonImmutable::now();
+            $firstPull = $cursor === null && $continuation === null;
             // A write batch locks the household for the rest of the transaction
             // so peers' write batches wait; a pull just reads the committed version.
-            $committed = $this->committedVersion($household, lock: $incoming !== [] || $cursor === null);
-            if (($incoming !== [] || $cursor === null) && ! $household->hasMember($user)) {
+            $committed = $this->committedVersion($household, lock: $incoming !== [] || $firstPull);
+            if (($incoming !== [] || $firstPull) && ! $household->hasMember($user)) {
                 abort(409, 'You are no longer a member of this household.');
             }
             $state = $this->newState($household, $resources);
@@ -306,10 +316,28 @@ class ApplySyncBatch
             }
 
             // A first sync tidies the whole household; a push only the dinners it wrote items for.
-            if ($cursor === null) {
+            if ($firstPull) {
                 $this->mergeDinnerItems->handle($household, $state);
             } elseif ($state->writtenDinnerIds() !== []) {
                 $this->mergeDinnerItems->handle($household, $state, $state->writtenDinnerIds());
+            }
+
+            // Every page reports the version the first page was read at: the
+            // client stores it once the last page is in, and its next pull then
+            // brings anything that changed while it was paging.
+            $version = $continuation['version'] ?? $state->allocatedVersion() ?? $committed;
+
+            if ($paged) {
+                [$outgoing, $nextPage] = $this->collectFirstSyncPage($household, $resources, $state, $version, $continuation);
+
+                return [
+                    'cursor' => $version,
+                    'household_id' => $household->id,
+                    'changes' => $outgoing,
+                    'rejected' => $state->rejected,
+                    'remaps' => $state->remaps,
+                    'next_page' => $nextPage,
+                ];
             }
 
             $outgoing = [];
@@ -318,13 +346,104 @@ class ApplySyncBatch
             }
 
             return [
-                'cursor' => $state->allocatedVersion() ?? $committed,
+                'cursor' => $version,
                 'household_id' => $household->id,
                 'changes' => $outgoing,
                 'rejected' => $state->rejected,
                 'remaps' => $state->remaps,
             ];
         });
+    }
+
+    /**
+     * One page of a first sync: live rows in resource (dependency) order and
+     * id order, at most `handlelista.sync_page_rows` of them, plus — on the first page — every row
+     * the push must return whatever its page (a pushed row the server kept its
+     * own copy of, tombstones included).
+     *
+     * @param  array<string, array{fks: array<string, string>, query: callable, serialize: callable}>  $resources
+     * @param  array{version: int, resource: int, after: int}|null  $continuation
+     * @return array{0: array<string, array<int, array<string, mixed>>>, 1: string|null}
+     */
+    private function collectFirstSyncPage(Household $household, array $resources, SyncBatchState $state, int $version, ?array $continuation): array
+    {
+        $keys = array_keys($resources);
+        $outgoing = array_fill_keys($keys, []);
+        $sent = [];
+        if ($continuation === null) {
+            foreach ($resources as $key => $resource) {
+                $include = $state->include[$key] ?? [];
+                if ($include === []) {
+                    continue;
+                }
+                $models = ($resource['query'])($household, false)->withTrashed()->whereIn('uuid', $include)->orderBy('id')->get();
+                $outgoing[$key] = $this->serializeModels($resource, $models, $state);
+                foreach ($models as $model) {
+                    $sent[$key][$model->getAttribute('uuid')] = true;
+                }
+            }
+        }
+
+        $budget = max(1, (int) config('handlelista.sync_page_rows'));
+        for ($index = $continuation['resource'] ?? 0; $index < count($keys); $index++) {
+            $key = $keys[$index];
+            $resource = $resources[$key];
+            $query = ($resource['query'])($household, true);
+            $idColumn = $query->getModel()->qualifyColumn('id');
+            $models = $query
+                ->where($idColumn, '>', $index === ($continuation['resource'] ?? 0) ? ($continuation['after'] ?? 0) : 0)
+                ->orderBy($idColumn)
+                ->limit($budget + 1)
+                ->get();
+            $hasMore = $models->count() > $budget;
+            $models = $models->take($budget)->reject(fn (Model $model) => isset($sent[$key][$model->getAttribute('uuid')]))->values();
+            array_push($outgoing[$key], ...$this->serializeModels($resource, $models, $state));
+            $budget -= $models->count();
+
+            if ($hasMore) {
+                return [$outgoing, $this->encodePage($version, $index, (int) $models->last()?->getKey())];
+            }
+            if ($budget <= 0) {
+                return [$outgoing, $index + 1 < count($keys) ? $this->encodePage($version, $index + 1, 0) : null];
+            }
+        }
+
+        return [$outgoing, null];
+    }
+
+    /**
+     * @param  array{fks: array<string, string>, serialize: callable}  $resource
+     * @param  Collection<int, Model>  $models
+     * @return list<array<string, mixed>>
+     */
+    private function serializeModels(array $resource, Collection $models, SyncBatchState $state): array
+    {
+        if ($models->isEmpty()) {
+            return [];
+        }
+        foreach ($resource['fks'] as $column => $parentKey) {
+            $state->resolveUuids($parentKey, $models->pluck($column)->all());
+        }
+
+        return $models->map(fn (Model $model): array => $this->serializeRow($resource, $model, $state))->values()->all();
+    }
+
+    private function encodePage(int $version, int $resource, int $after): string
+    {
+        return $version.'.'.$resource.'.'.$after;
+    }
+
+    /** @return array{version: int, resource: int, after: int}|null */
+    private function decodePage(?string $page, int $resourceCount): ?array
+    {
+        if ($page === null) {
+            return null;
+        }
+        if (preg_match('/^(\d{1,18})\.(\d{1,2})\.(\d{1,18})$/', $page, $match) !== 1 || (int) $match[2] >= $resourceCount) {
+            throw ValidationException::withMessages(['page' => 'That page does not exist.']);
+        }
+
+        return ['version' => (int) $match[1], 'resource' => (int) $match[2], 'after' => (int) $match[3]];
     }
 
     private function committedVersion(Household $household, bool $lock): int

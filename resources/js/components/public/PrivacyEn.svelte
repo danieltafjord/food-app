@@ -18,7 +18,7 @@
             notice explains what happens to the information you use in the app.
         </p>
         <p class="text-sm text-muted-foreground">
-            Last updated: <time datetime="2026-09-21">21 September 2026</time>
+            Last updated: <time datetime="2026-09-24">24 September 2026</time>
         </p>
     </header>
 
@@ -82,6 +82,53 @@
                 IP address, browser or device information, request times and
                 errors. The app does not include advertising or third-party
                 analytics SDKs.
+            </p>
+            <p class="mt-3">
+                Requests from the app, the public API and connected AI agents
+                (MCP) are recorded in a request log: the address and method
+                requested, the response status and timing, IP address, device or
+                browser details, errors, and the request and response content,
+                limited in size and with passwords and access tokens removed.
+            </p>
+        </section>
+
+        <section>
+            <h2>AI features and dinner pictures</h2>
+            <p>
+                AI features are optional. Ingredient sorting and ingredient
+                suggestions are off until you turn them on in your settings, and
+                require a cloud account. Week planning suggestions can be
+                requested without an account, and dinner pictures can be
+                generated on request.
+            </p>
+            <ul class="mt-3 list-disc space-y-3 pl-5">
+                <li>
+                    <strong class="text-foreground">Ingredient sorting</strong>
+                    sends an ingredient’s name and your language.
+                </li>
+                <li>
+                    <strong class="text-foreground"
+                        >Ingredient suggestions</strong
+                    >
+                    send a dinner’s name, category and ingredients, the names of ingredients
+                    your household has saved, and your language.
+                </li>
+                <li>
+                    <strong class="text-foreground">Week planning</strong> sends what
+                    you write about your preferences, the options you pick, servings
+                    and the number of days, dinners to leave out, and the names, categories
+                    and ingredients of saved dinners it may reuse.
+                </li>
+                <li>
+                    <strong class="text-foreground">Dinner pictures</strong> can be
+                    generated from a dinner’s name, category and ingredients.
+                </li>
+            </ul>
+            <p class="mt-3">
+                Dinner pictures you upload or generate are stored as files that
+                can be opened by anyone who has their address. The addresses are
+                random and only shared with your household’s devices, and
+                location and camera details are removed from uploaded photos.
             </p>
         </section>
 
@@ -150,6 +197,22 @@
                 Kingdom.
             </p>
             <p class="mt-3">
+                AI features are processed by <a href="https://openrouter.ai/"
+                    >OpenRouter</a
+                >, which forwards each request to the AI model provider that
+                answers it. This takes place outside the EU/EEA and the United
+                Kingdom, including in the United States. For ingredient
+                suggestions, week planning and dinner pictures we ask OpenRouter
+                to use only providers that do not store or train on the content;
+                see OpenRouter’s
+                <a href="https://openrouter.ai/privacy">privacy policy</a> for how
+                it handles requests.
+            </p>
+            <p class="mt-3">
+                Dinner pictures are stored in Laravel Cloud Object Storage,
+                provided by Cloudflare R2, with storage restricted to the EU.
+            </p>
+            <p class="mt-3">
                 We do not sell your personal data. Information may also be
                 disclosed when required by law.
             </p>
@@ -187,6 +250,17 @@
                 on this device” in the app’s Account screen on each device to
                 remove its local copy. Clearing device data alone does not
                 delete your cloud account.
+            </p>
+            <p class="mt-3">
+                The request log is kept for 30 days. For AI features we keep a
+                record of when a feature was used, the model, its timing and
+                cost, and for 30 days also what was sent and returned; after
+                that only the usage record remains. What you write about your
+                preferences for week planning is not kept. Deleting your account
+                removes your request log and the stored AI requests and answers;
+                usage records remain without your name. Pictures no dinner uses
+                any more are removed after a day, and pictures of deleted
+                dinners after 30 days.
             </p>
             <p class="mt-3">
                 Database backups are currently disabled in Laravel Cloud, and we

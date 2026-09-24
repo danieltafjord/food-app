@@ -18,6 +18,7 @@ class ShoppingListData extends Data
         public ?int $dinnerPlanId,
         #[ItemsOf(ShoppingListItemData::class)]
         public array $items,
+        public ?string $archivedAt = null,
     ) {}
 
     public static function fromList(ShoppingList $list): self
@@ -26,6 +27,7 @@ class ShoppingListData extends Data
             id: $list->id,
             name: $list->name,
             dinnerPlanId: $list->dinner_plan_id,
+            archivedAt: $list->archived_at?->toISOString(),
             items: $list->items
                 ->map(fn (ShoppingListItem $item) => ShoppingListItemData::fromItem($item)->toArray())
                 ->all(),

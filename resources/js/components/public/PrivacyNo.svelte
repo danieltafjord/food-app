@@ -19,7 +19,7 @@
             bruker i appen.
         </p>
         <p class="text-sm text-muted-foreground">
-            Sist oppdatert: <time datetime="2026-09-21">21. september 2026</time
+            Sist oppdatert: <time datetime="2026-09-24">24. september 2026</time
             >
         </p>
     </header>
@@ -86,6 +86,56 @@
                 opplysninger om nettleser eller enhet, tidspunkter for
                 forespørsler og feil. Appen inneholder ikke reklame eller
                 analyseverktøy fra tredjeparter.
+            </p>
+            <p class="mt-3">
+                Forespørsler fra appen, det offentlige API-et og tilkoblede
+                KI-agenter (MCP) registreres i en forespørselslogg: adressen og
+                metoden som ble brukt, svarstatus og tidsbruk, IP-adresse,
+                opplysninger om enhet eller nettleser, feil, og innholdet i
+                forespørselen og svaret, begrenset i størrelse og uten passord
+                og tilgangstokener.
+            </p>
+        </section>
+
+        <section>
+            <h2>KI-funksjoner og middagsbilder</h2>
+            <p>
+                KI-funksjonene er valgfrie. Sortering av ingredienser og forslag
+                til ingredienser er slått av til du slår dem på i
+                innstillingene, og krever en skykonto. Forslag til ukeplan kan
+                hentes uten konto, og middagsbilder kan lages når du ber om det.
+            </p>
+            <ul class="mt-3 list-disc space-y-3 pl-5">
+                <li>
+                    <strong class="text-foreground"
+                        >Sortering av ingredienser</strong
+                    >
+                    sender navnet på en ingrediens og språket ditt.
+                </li>
+                <li>
+                    <strong class="text-foreground"
+                        >Forslag til ingredienser</strong
+                    >
+                    sender navnet, kategorien og ingrediensene til en middag, navnene
+                    på ingrediensene husstanden har lagret, og språket ditt.
+                </li>
+                <li>
+                    <strong class="text-foreground">Ukeplanlegging</strong> sender
+                    det du skriver om hva dere liker, valgene du krysser av, antall
+                    porsjoner og dager, middager som skal holdes utenfor, og navn,
+                    kategori og ingredienser for lagrede middager som kan brukes på
+                    nytt.
+                </li>
+                <li>
+                    <strong class="text-foreground">Middagsbilder</strong> kan lages
+                    ut fra navnet, kategorien og ingrediensene til en middag.
+                </li>
+            </ul>
+            <p class="mt-3">
+                Middagsbilder du laster opp eller lager, lagres som filer som
+                kan åpnes av alle som har adressen. Adressene er tilfeldige og
+                deles bare med husstandens enheter, og opplysninger om sted og
+                kamera fjernes fra bilder du laster opp.
             </p>
         </section>
 
@@ -155,6 +205,22 @@
                 i Storbritannia.
             </p>
             <p class="mt-3">
+                KI-funksjonene behandles av <a href="https://openrouter.ai/"
+                    >OpenRouter</a
+                >, som sender hver forespørsel videre til leverandøren av
+                KI-modellen som svarer. Dette skjer utenfor EU/EØS og
+                Storbritannia, blant annet i USA. For forslag til ingredienser,
+                ukeplanlegging og middagsbilder ber vi OpenRouter om bare å
+                bruke leverandører som ikke lagrer eller trener på innholdet; se
+                OpenRouters
+                <a href="https://openrouter.ai/privacy">personvernerklæring</a> for
+                hvordan forespørsler håndteres.
+            </p>
+            <p class="mt-3">
+                Middagsbilder lagres i Laravel Cloud Object Storage, levert av
+                Cloudflare R2, med lagring begrenset til EU.
+            </p>
+            <p class="mt-3">
                 Vi selger ikke personopplysningene dine. Opplysninger kan også
                 bli utlevert når loven krever det.
             </p>
@@ -192,6 +258,17 @@
                 denne enheten» under Konto i appen på hver enhet for å fjerne
                 den lokale kopien. Å slette data på enheten sletter ikke kontoen
                 din i nettskyen.
+            </p>
+            <p class="mt-3">
+                Forespørselsloggen lagres i 30 dager. For KI-funksjonene lagrer
+                vi når en funksjon ble brukt, modellen, tidsbruk og kostnad, og
+                i 30 dager også hva som ble sendt og returnert; deretter er bare
+                bruksoppføringen igjen. Det du skriver om hva dere liker ved
+                ukeplanlegging, lagres ikke. Når du sletter kontoen, fjernes
+                forespørselsloggen din og de lagrede KI-forespørslene og
+                -svarene; bruksoppføringene blir liggende uten navnet ditt.
+                Bilder som ingen middag bruker lenger, fjernes etter ett døgn,
+                og bilder av slettede middager etter 30 dager.
             </p>
             <p class="mt-3">
                 Sikkerhetskopiering av databasen er for tiden slått av i Laravel

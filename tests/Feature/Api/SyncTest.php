@@ -7,6 +7,7 @@ use App\Models\Dinner;
 use App\Models\DinnerItem;
 use App\Models\DinnerPlan;
 use App\Models\DinnerPlanEntry;
+use App\Models\Household;
 use App\Models\Ingredient;
 use App\Models\ShoppingList;
 use App\Models\ShoppingListItem;
@@ -774,4 +775,98 @@ it('rejects cross-household custom category assignments over sync', function () 
     $response = sync(null, ['dinners' => [dinnerRow() + ['category' => $category->uuid]]])->assertOk();
     expect($response->json('rejected.dinners.0.code'))->toBe('unknown_parent');
     expect($this->household->dinners()->count())->toBe(0);
+});
+
+/**
+ * Follow a paged first sync to its last page.
+ *
+ * @return array{pages: list<array<string, mixed>>, rows: array<string, list<string>>}
+ */
+function pagedFirstSync(array $changes = []): array
+{
+    $pages = [];
+    $rows = [];
+    $page = null;
+    do {
+        $response = test()->postJson('/api/v1/sync', ['cursor' => null, 'changes' => $page === null ? $changes : [], 'paged' => true, 'page' => $page])
+            ->assertSuccessful()->json();
+        $pages[] = $response;
+        foreach ($response['changes'] as $key => $list) {
+            foreach ($list as $row) {
+                $rows[$key][] = $row['id'];
+            }
+        }
+        $page = $response['next_page'];
+    } while ($page !== null);
+
+    return ['pages' => $pages, 'rows' => $rows];
+}
+
+it('pages a first sync into the same live rows and cursor as an unpaged one', function () {
+    config(['handlelista.sync_page_rows' => 2]);
+    $ingredients = Ingredient::factory()->count(3)->for($this->household)->create();
+    $dinner = Dinner::factory()->for($this->household)->create();
+    foreach ($ingredients as $ingredient) {
+        DinnerItem::factory()->for($dinner)->create(['ingredient_id' => $ingredient->id]);
+    }
+    Dinner::factory()->for($this->household)->create()->delete();
+    Ingredient::factory()->for(Household::factory())->create();
+
+    $unpaged = sync()->assertSuccessful()->json();
+    $paged = pagedFirstSync();
+
+    expect(count($paged['pages']))->toBeGreaterThan(3);
+    foreach ($paged['pages'] as $page) {
+        expect(collect($page['changes'])->flatten(1)->count())->toBeLessThanOrEqual(2);
+        expect($page['cursor'])->toBe($unpaged['cursor']);
+    }
+    foreach ($unpaged['changes'] as $key => $list) {
+        expect($paged['rows'][$key] ?? [])->toEqualCanonicalizing(array_column($list, 'id'));
+    }
+});
+
+it('brings rows changed while paging in the next pull', function () {
+    config(['handlelista.sync_page_rows' => 1]);
+    Ingredient::factory()->count(2)->for($this->household)->create();
+
+    $first = test()->postJson('/api/v1/sync', ['cursor' => null, 'changes' => [], 'paged' => true])->assertSuccessful()->json();
+    $late = Ingredient::factory()->for($this->household)->create(['name' => 'Added meanwhile']);
+    $page = $first['next_page'];
+    while ($page !== null) {
+        $page = test()->postJson('/api/v1/sync', ['cursor' => null, 'changes' => [], 'paged' => true, 'page' => $page])->assertSuccessful()->json('next_page');
+    }
+
+    sync($first['cursor'])->assertSuccessful()->assertJsonPath('changes.ingredients.0.id', $late->uuid);
+});
+
+it('rejects a page that does not exist', function (string $page) {
+    test()->postJson('/api/v1/sync', ['cursor' => null, 'changes' => [], 'paged' => true, 'page' => $page])->assertUnprocessable();
+})->with(['nonsense', '1.99.0', '1.2']);
+
+it('returns rows a paged first sync merged on its first page, whatever page their table is on', function () {
+    config(['handlelista.sync_page_rows' => 1]);
+    $ingredient = Ingredient::factory()->for($this->household)->create();
+    $dinner = Dinner::factory()->for($this->household)->create();
+    $duplicates = DinnerItem::factory()->count(2)->for($dinner)->create(['ingredient_id' => $ingredient->id, 'unit' => 'g']);
+
+    $first = test()->postJson('/api/v1/sync', ['cursor' => null, 'changes' => [], 'paged' => true])->assertSuccessful();
+
+    expect($first->json('next_page'))->not->toBeNull();
+    expect(array_column($first->json('changes.dinner_items'), 'id'))->toContain($duplicates[1]->uuid);
+    expect($first->json('remaps.dinner_items'))->toBe([$duplicates[1]->uuid => $duplicates[0]->uuid]);
+});
+
+it('syncs a shopping list being archived and restored', function () {
+    $list = syncRow(['name' => 'Last week', 'dinner_plan_id' => null, 'archived_at' => null]);
+    $cursor = sync(null, ['shopping_lists' => [$list]])->assertSuccessful()->json('cursor');
+
+    $archivedAt = now()->subMinute()->toISOString();
+    $cursor = sync($cursor, ['shopping_lists' => [[...$list, 'archived_at' => $archivedAt, 'updated_at' => now()->toISOString()]]])
+        ->assertSuccessful()->json('cursor');
+    expect(ShoppingList::query()->where('uuid', $list['id'])->value('archived_at'))->not->toBeNull();
+    sync(null)->assertJsonPath('changes.shopping_lists.0.archived_at', CarbonImmutable::parse($archivedAt)->toISOString());
+
+    $this->travel(1)->seconds();
+    sync($cursor, ['shopping_lists' => [[...$list, 'archived_at' => null, 'updated_at' => now()->toISOString()]]])->assertSuccessful();
+    expect(ShoppingList::query()->where('uuid', $list['id'])->value('archived_at'))->toBeNull();
 });

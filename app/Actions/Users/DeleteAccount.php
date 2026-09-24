@@ -42,7 +42,7 @@ class DeleteAccount
                 });
             }
             $householdIds = $householdIds->merge(Household::query()
-                ->whereNotNull('content_authors->user_'.$user->id)->pluck('id'));
+                ->where(fn (Builder $query) => $this->authoredBy($query, $user))->pluck('id'));
 
             $households = Household::query()->whereKey($householdIds->unique())
                 ->orderBy('id')->lockForUpdate()->get();
@@ -104,7 +104,22 @@ class DeleteAccount
     {
         return $model::withTrashed()->where(fn (Builder $query) => $query
             ->where('created_by_user_id', $user->id)
-            ->orWhereNotNull('content_authors->user_'.$user->id));
+            ->orWhere(fn (Builder $query) => $this->authoredBy($query, $user)));
+    }
+
+    /**
+     * Rows whose content the user authored. On PostgreSQL the key-exists
+     * operator uses the GIN index on the jsonb column (`??` is PDO's escape
+     * for a literal `?`); a JSON path comparison could not use it.
+     */
+    private function authoredBy(Builder $query, User $user): void
+    {
+        $key = 'user_'.$user->id;
+        if ($query->getConnection()->getDriverName() === 'pgsql') {
+            $query->whereRaw('content_authors ?? ?', [$key]);
+        } else {
+            $query->whereNotNull('content_authors->'.$key);
+        }
     }
 
     private function eraseContributions(Model $resource, User $user): void
