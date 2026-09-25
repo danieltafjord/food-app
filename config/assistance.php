@@ -1,7 +1,7 @@
 <?php
 
 return [
-    // All provider access is server-side. This switch disables both features.
+    // Initial global AI state; admins can override it in the backoffice.
     'enabled' => env('AI_ENABLED', false),
     'classification_model' => env('AI_CLASSIFICATION_MODEL', 'typesafe/jev-1.13'),
     'suggestion_model' => env('AI_SUGGESTION_MODEL', 'google/gemini-3.5-flash-lite'),

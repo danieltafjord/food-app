@@ -34,6 +34,7 @@
         'user.deleted': 'deleted',
         'ai.model_updated': 'changed the model for',
         'ai.limits_updated': 'changed the limits for',
+        'ai.availability_updated': 'changed availability for',
     };
 
     const formatDateTime = (value: string | null) =>

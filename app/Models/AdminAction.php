@@ -32,6 +32,8 @@ class AdminAction extends Model
 
     public const AI_LIMITS_UPDATED = 'ai.limits_updated';
 
+    public const AI_AVAILABILITY_UPDATED = 'ai.availability_updated';
+
     /** @return array<string, string> */
     protected function casts(): array
     {

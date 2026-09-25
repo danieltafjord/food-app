@@ -10,6 +10,7 @@ use App\Actions\Ai\RunAiRequest;
 use App\Actions\Ai\TestAiFeature;
 use App\Enums\ReasoningEffort;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\AiAvailabilityUpdateRequest;
 use App\Http\Requests\Admin\AiLimitsUpdateRequest;
 use App\Http\Requests\Admin\AiSettingsUpdateRequest;
 use App\Http\Requests\Admin\AiTestRequest;
@@ -32,14 +33,33 @@ class AiSettingsController extends Controller
             'limits' => $configuration->limits(),
             'reasoningEfforts' => ReasoningEffort::values(),
             'available' => $runner->available(),
+            'enabled' => $configuration->enabled(),
+            'providerConfigured' => $configuration->providerConfigured(),
             'usage' => $usage->overview(),
             'models' => Inertia::defer(fn () => $catalogue->handle(), 'catalogue'),
             'catalogue' => Inertia::defer(fn () => $catalogue->status(), 'catalogue'),
             'recentActions' => AdminAction::query()
-                ->whereIn('action', [AdminAction::AI_MODEL_UPDATED, AdminAction::AI_LIMITS_UPDATED])
+                ->whereIn('action', [AdminAction::AI_MODEL_UPDATED, AdminAction::AI_LIMITS_UPDATED, AdminAction::AI_AVAILABILITY_UPDATED])
                 ->latest('id')->limit(10)->get()
                 ->map(fn (AdminAction $action) => $action->toRow())->all(),
         ]);
+    }
+
+    public function updateAvailability(AiAvailabilityUpdateRequest $request, AiConfiguration $configuration, RecordAdminAction $audit): RedirectResponse
+    {
+        $before = $configuration->enabled();
+        $enabled = $request->boolean('enabled');
+        $configuration->setEnabled($enabled);
+
+        if ($before !== $enabled) {
+            $audit->handle($request->user(), AdminAction::AI_AVAILABILITY_UPDATED, subjectLabel: 'Server-side AI', changes: [
+                'enabled' => ['from' => $before, 'to' => $enabled],
+            ]);
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $enabled ? __('Server-side AI enabled.') : __('Server-side AI disabled.')]);
+
+        return to_route('admin.ai.edit');
     }
 
     /**

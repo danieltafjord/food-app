@@ -13,6 +13,7 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Route::get('analytics', [AnalyticsController::class, 'index'])->name('analytics');
     Route::get('ai', [AiSettingsController::class, 'edit'])->name('ai.edit');
     Route::patch('ai', [AiSettingsController::class, 'update'])->name('ai.update');
+    Route::patch('ai/availability', [AiSettingsController::class, 'updateAvailability'])->name('ai.availability.update');
     Route::patch('ai/limits', [AiSettingsController::class, 'updateLimits'])->name('ai.limits.update');
     Route::post('ai/test', [AiSettingsController::class, 'test'])->name('ai.test');
     Route::post('ai/catalogue/refresh', [AiSettingsController::class, 'refreshCatalogue'])->name('ai.catalogue.refresh');

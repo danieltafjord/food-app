@@ -29,6 +29,22 @@ class AiConfiguration
 
     public const LIMIT_SCOPES = ['user', 'household', 'global'];
 
+    /** The environment supplies the initial value until an admin saves an override. */
+    public function enabled(): bool
+    {
+        return (bool) AppSetting::get('ai.enabled', (bool) config('assistance.enabled'));
+    }
+
+    public function setEnabled(bool $enabled): void
+    {
+        AppSetting::set('ai.enabled', $enabled);
+    }
+
+    public function providerConfigured(): bool
+    {
+        return filled(config('ai.providers.openrouter.key'));
+    }
+
     public function model(string $feature): string
     {
         $model = AppSetting::get("ai.{$feature}.model");

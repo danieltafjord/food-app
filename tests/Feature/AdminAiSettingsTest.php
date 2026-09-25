@@ -3,6 +3,7 @@
 use App\Actions\Ai\AiConfiguration;
 use App\Actions\Ai\AiUsage;
 use App\Actions\Ai\ListOpenRouterModels;
+use App\Actions\Ai\RunAiRequest;
 use App\Actions\Ai\SuggestDinnerIngredients;
 use App\Enums\ReasoningEffort;
 use App\Models\AdminAction;
@@ -21,6 +22,78 @@ beforeEach(function () {
     config(['inertia.ssr.enabled' => false]);
     config(['assistance.classification_model' => 'typesafe/jev-1.13', 'assistance.suggestion_model' => 'google/gemini-3.5-flash-lite', 'assistance.suggestion_reasoning' => 'minimal']);
 });
+
+test('an admin can override the environment AI state and the change is audited', function (bool $enabled) {
+    config(['assistance.enabled' => ! $enabled, 'ai.providers.openrouter.key' => 'test-server-key']);
+    $admin = User::factory()->admin()->create();
+    // Prime the settings cache before the update to exercise invalidation.
+    expect(app(RunAiRequest::class)->available())->toBe(! $enabled);
+
+    $this->actingAs($admin)->patch(route('admin.ai.availability.update'), ['enabled' => $enabled])
+        ->assertSessionHasNoErrors()->assertRedirect(route('admin.ai.edit'));
+
+    expect(AppSetting::query()->findOrFail('ai.enabled')->value)->toBe($enabled);
+    expect(app(RunAiRequest::class)->available())->toBe($enabled);
+    expect(AdminAction::query()->sole())->admin_id->toBe($admin->id)
+        ->action->toBe(AdminAction::AI_AVAILABILITY_UPDATED)
+        ->changes->toBe(['enabled' => ['from' => ! $enabled, 'to' => $enabled]]);
+
+    $this->get(route('admin.ai.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('enabled', $enabled)->where('available', $enabled)->where('providerConfigured', true)
+        ->where('recentActions.0.action', AdminAction::AI_AVAILABILITY_UPDATED));
+})->with([true, false]);
+
+test('enabling AI without a provider key saves the preference but reports unavailable', function () {
+    config(['assistance.enabled' => false, 'ai.providers.openrouter.key' => null]);
+
+    $this->actingAs(User::factory()->admin()->create())
+        ->patch(route('admin.ai.availability.update'), ['enabled' => true])
+        ->assertSessionHasNoErrors()->assertRedirect(route('admin.ai.edit'));
+
+    expect(AppSetting::query()->findOrFail('ai.enabled')->value)->toBeTrue();
+    expect(app(RunAiRequest::class)->available())->toBeFalse();
+    $this->get(route('admin.ai.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('enabled', true)->where('providerConfigured', false)->where('available', false));
+});
+
+test('saving the same AI state does not duplicate the audit entry', function () {
+    AppSetting::set('ai.enabled', false);
+
+    $this->actingAs(User::factory()->admin()->create())
+        ->patch(route('admin.ai.availability.update'), ['enabled' => false])
+        ->assertSessionHasNoErrors()->assertRedirect(route('admin.ai.edit'));
+
+    $this->assertDatabaseCount('admin_actions', 0);
+});
+
+test('guests and non-admins cannot change global AI availability', function (bool $signedIn) {
+    if ($signedIn) {
+        $this->actingAs(User::factory()->create());
+    }
+
+    $response = $this->patch(route('admin.ai.availability.update'), ['enabled' => true]);
+    if ($signedIn) {
+        $response->assertForbidden();
+    } else {
+        $response->assertRedirect(route('login'));
+    }
+
+    $this->assertDatabaseCount('app_settings', 0);
+    $this->assertDatabaseCount('admin_actions', 0);
+})->with([true, false]);
+
+test('AI availability requires an explicit boolean', function (array $payload, string $message) {
+    $this->actingAs(User::factory()->admin()->create())
+        ->from(route('admin.ai.edit'))
+        ->patch(route('admin.ai.availability.update'), $payload)
+        ->assertRedirect(route('admin.ai.edit'))->assertSessionHasErrors(['enabled' => $message]);
+
+    $this->assertDatabaseCount('app_settings', 0);
+    $this->assertDatabaseCount('admin_actions', 0);
+})->with([
+    [[], 'The enabled field is required.'],
+    [['enabled' => 'invalid'], 'The enabled field must be true or false.'],
+]);
 
 test('the AI settings page shows the configured defaults and the OpenRouter catalogue', function () {
     Http::preventStrayRequests();

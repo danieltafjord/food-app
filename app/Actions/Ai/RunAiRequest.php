@@ -18,7 +18,7 @@ class RunAiRequest
 
     public function available(): bool
     {
-        return (bool) config('assistance.enabled') && filled(config('ai.providers.openrouter.key'));
+        return $this->configuration->enabled() && $this->configuration->providerConfigured();
     }
 
     /**

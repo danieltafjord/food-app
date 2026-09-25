@@ -95,6 +95,8 @@
         limits,
         reasoningEfforts,
         available,
+        enabled,
+        providerConfigured,
         usage,
         models,
         catalogue,
@@ -104,12 +106,27 @@
         limits: Limits[];
         reasoningEfforts: string[];
         available: boolean;
+        enabled: boolean;
+        providerConfigured: boolean;
         usage: Usage;
         /** Deferred: undefined until the OpenRouter catalogue has loaded. */
         models?: ModelOption[];
         catalogue?: { fetched_at: string | null; failed: boolean };
         recentActions: AuditEntry[];
     } = $props();
+
+    const availabilityForm = useForm({ enabled: false });
+
+    function toggleAvailability() {
+        if (availabilityForm.processing) {
+            return;
+        }
+
+        availabilityForm.enabled = !enabled;
+        availabilityForm.patch(AiSettingsController.updateAvailability.url(), {
+            preserveScroll: true,
+        });
+    }
 
     const scopes: {
         key: Scope;
@@ -400,7 +417,11 @@
             class="rounded-full border border-border/80 bg-panel px-3 py-1.5 text-xs font-medium"
         >
             {#if available}
-                <StatusDot tone="ok">Server-side AI on</StatusDot>
+                <StatusDot tone="ok">Server-side AI enabled</StatusDot>
+            {:else if enabled}
+                <StatusDot tone="warning"
+                    >AI enabled · API key missing</StatusDot
+                >
             {:else}
                 <StatusDot tone="warning">Server-side AI off</StatusDot>
             {/if}
@@ -408,19 +429,72 @@
     {/snippet}
 
     <div class="flex max-w-3xl flex-col gap-6">
-        {#if !available}
+        <AdminPanel
+            title="Server-side AI"
+            description="Controls week planning, ingredient suggestions, categorization and dinner image generation. Changes apply to new requests in this environment."
+        >
+            <div class="flex items-center justify-between gap-4">
+                <div class="space-y-1">
+                    <p id="ai-enabled-label" class="text-sm font-medium">
+                        Enable AI assistance
+                    </p>
+                    <p
+                        id="ai-enabled-description"
+                        class="text-xs text-muted-foreground"
+                    >
+                        {availabilityForm.processing
+                            ? 'Saving…'
+                            : enabled
+                              ? 'Enabled'
+                              : 'Disabled'}. Your choice is saved across
+                        deployments.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    aria-labelledby="ai-enabled-label"
+                    aria-describedby="ai-enabled-description"
+                    disabled={availabilityForm.processing}
+                    onclick={toggleAvailability}
+                    class={cn(
+                        'inline-flex h-7 w-12 shrink-0 items-center rounded-full border border-border p-0.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50',
+                        enabled ? 'bg-primary' : 'bg-muted',
+                    )}
+                >
+                    <span
+                        class={cn(
+                            'size-5 rounded-full bg-background shadow-sm transition-transform',
+                            enabled ? 'translate-x-5' : 'translate-x-0',
+                        )}
+                    ></span>
+                </button>
+            </div>
+            <InputError message={availabilityForm.errors.enabled} />
+            {#snippet footer()}
+                <p class="text-xs text-muted-foreground">
+                    {providerConfigured
+                        ? 'OpenRouter API key configured.'
+                        : 'OpenRouter API key missing.'}
+                    This status does not test provider connectivity, quota or recipe
+                    generation.
+                </p>
+            {/snippet}
+        </AdminPanel>
+
+        {#if !providerConfigured}
             <div
                 class="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
             >
                 <span class="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500"
                 ></span>
                 <p>
-                    Requests are not sent anywhere until <code
-                        class="font-mono text-xs">AI_ENABLED=true</code
+                    Add an <code class="font-mono text-xs"
+                        >OPENROUTER_API_KEY</code
                     >
-                    and an
-                    <code class="font-mono text-xs">OPENROUTER_API_KEY</code> are
-                    set in the environment. Model choices are saved regardless.
+                    to this server's environment before AI requests can run. Enabling
+                    the switch saves your preference, but cannot supply the key.
                 </p>
             </div>
         {/if}
@@ -875,7 +949,7 @@
 
         <AdminPanel
             title="Recent changes"
-            description="The last ten changes to models and budgets."
+            description="The last ten changes to AI availability, models and budgets."
         >
             <AuditTrail entries={recentActions} emptyText="No changes yet." />
         </AdminPanel>

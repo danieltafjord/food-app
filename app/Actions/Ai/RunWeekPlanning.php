@@ -3,6 +3,7 @@
 namespace App\Actions\Ai;
 
 use App\Models\AiRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -47,6 +48,7 @@ class RunWeekPlanning
             }, 3);
             $startedAt = hrtime(true);
             $result = null;
+            $stage = 'generation';
             try {
                 $result = $agent->handle($context);
                 $available = array_column($context['available'], null, 'id');
@@ -55,6 +57,7 @@ class RunWeekPlanning
                     'name' => $available[$dinner['existing_id']]['name'],
                     'ingredients' => $available[$dinner['existing_id']]['ingredients'],
                 ], $result->data['dinners']);
+                $stage = 'review';
                 $review = $this->reviewer->handle([
                     'dinners' => $dinners, 'servings' => $context['servings'],
                     'excluded_ingredients' => $context['excluded_ingredients'] ?? [], 'shortcuts' => $context['shortcuts'],
@@ -65,8 +68,8 @@ class RunWeekPlanning
                     throw new UnexpectedValueException('Recipe consistency review failed.');
                 }
             } catch (Throwable $e) {
-                Log::warning('Week suggestion failed.', ['exception' => $e::class]);
-                $this->record($model, $startedAt, $result, $e::class);
+                Log::warning('Week suggestion failed.', ['exception' => $e::class, 'stage' => $stage]);
+                $this->record($model, $startedAt, $result, $this->describeFailure($e, $stage, $context));
                 $this->usage->reject('unavailable', 503);
             }
             $this->record($model, $startedAt, $result);
@@ -76,6 +79,53 @@ class RunWeekPlanning
         } finally {
             $lock->release();
         }
+    }
+
+    /** Keep useful HTTP diagnostics without retaining raw provider bodies or guest input. */
+    private function describeFailure(Throwable $exception, string $stage, array $context): string
+    {
+        $description = $exception::class.': '.$stage;
+        while (! $exception instanceof RequestException && $exception->getPrevious() !== null) {
+            $exception = $exception->getPrevious();
+        }
+        if (! $exception instanceof RequestException) {
+            return $description;
+        }
+
+        $description .= '; HTTP '.$exception->response->status();
+        $message = $exception->response->json('error.message');
+        $details = is_string($message) ? [$message] : [];
+        foreach (['error_type', 'provider_code'] as $field) {
+            $value = $exception->response->json('error.metadata.'.$field);
+            if (is_string($value) || is_int($value)) {
+                $details[] = $field.'='.$value;
+            }
+        }
+        // Some providers nest their actual rejection reason in a JSON string.
+        // Extract only the message, never persist the raw body or metadata.
+        $raw = $exception->response->json('error.metadata.raw');
+        $upstreamMessage = is_string($raw) ? data_get(json_decode($raw, true), 'error.message') : null;
+        if (is_string($upstreamMessage)) {
+            $details[] = $upstreamMessage;
+        }
+        $message = implode('; ', $details);
+
+        $redactions = [];
+        $privateValues = array_intersect_key($context, array_flip([
+            'preferences', 'exclude', 'excluded_ingredients', 'reuse_ingredients', 'available',
+        ]));
+        $privateValues['provider_key'] = (string) config('ai.providers.openrouter.key');
+        array_walk_recursive($privateValues, function (mixed $value) use (&$redactions): void {
+            if (is_string($value) && trim($value) !== '') {
+                $redactions[$value] = '[redacted]';
+                $redactions[trim($value)] = '[redacted]';
+                $redactions[substr(json_encode($value, JSON_THROW_ON_ERROR), 1, -1)] = '[redacted]';
+            }
+        });
+        $message = strtr($message, $redactions);
+        $message = preg_replace('/Bearer\s+[A-Za-z0-9._\-]+/i', 'Bearer [redacted]', $message) ?? '';
+
+        return mb_substr($description.($message !== '' ? '; '.$message : ''), 0, 4000);
     }
 
     /** Preference text is deliberately omitted from persistent request logs. */

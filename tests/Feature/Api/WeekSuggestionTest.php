@@ -3,6 +3,7 @@
 use App\Actions\Ai\GenerateWeekDinners;
 use App\Actions\Ai\ReviewDinnerRecipes;
 use App\Models\AiRequest;
+use App\Models\AppSetting;
 use App\Models\Ingredient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -205,6 +206,26 @@ it('returns 503 when disabled even for a cached result', function () {
     GenerateWeekDinners::assertPromptedTimes(1);
 });
 
+it('uses the saved admin AI switch for week planning even when the environment differs', function (bool $enabled) {
+    config(['assistance.enabled' => ! $enabled]);
+    AppSetting::set('ai.enabled', $enabled);
+    GenerateWeekDinners::fake([['dinners' => [suggestedDinner()]]])->preventStrayPrompts();
+    ReviewDinnerRecipes::fake([['issues' => []]])->preventStrayPrompts();
+
+    $response = $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput());
+
+    if ($enabled) {
+        $response->assertOk()->assertJsonPath('data.dinners.0.name', 'Tomatpasta');
+        GenerateWeekDinners::assertPromptedTimes(1);
+        ReviewDinnerRecipes::assertPromptedTimes(1);
+    } else {
+        $response->assertServiceUnavailable()->assertJsonPath('code', 'unavailable');
+        GenerateWeekDinners::assertNeverPrompted();
+        ReviewDinnerRecipes::assertNeverPrompted();
+        $this->assertDatabaseCount('ai_daily_usage', 0);
+    }
+})->with([true, false]);
+
 it('returns 429 when the same caller already has a generation running', function () {
     ReviewDinnerRecipes::fake([['issues' => []]]);
     GenerateWeekDinners::fake();
@@ -227,6 +248,63 @@ it('returns 503 on provider failure without retrying or leaking diagnostics', fu
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())
         ->assertServiceUnavailable()->assertDontSee('private diagnostic');
 
+    Http::assertSentCount(1);
+});
+
+it('records the failed provider stage and HTTP diagnostic with secrets and guest data redacted', function (string $stage) {
+    Http::preventStrayRequests();
+    $responses = Http::sequence();
+    if ($stage === 'review') {
+        $responses->push([
+            'id' => 'generation', 'model' => 'test',
+            'choices' => [['index' => 0, 'message' => ['role' => 'assistant',
+                'content' => json_encode(['dinners' => [suggestedDinner()]])], 'finish_reason' => 'stop']],
+            'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 200, 'total_tokens' => 300],
+        ]);
+    }
+    $responses->push(['error' => [
+        'message' => 'Invalid response_format. test-server-key Bearer another-secret. Private preference: Bønner til middag.',
+        'metadata' => ['raw' => 'This raw provider body must not be saved'],
+    ]], 400);
+    Http::fake(['https://openrouter.ai/api/v1/chat/completions' => $responses]);
+
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput(['preferences' => 'Bønner til middag.']))
+        ->assertServiceUnavailable()->assertJsonPath('code', 'unavailable')->assertDontSee('response_format');
+
+    $record = AiRequest::query()->sole();
+    expect($record->error)->toContain($stage.'; HTTP 400; Invalid response_format.', '[redacted]')
+        ->not->toContain('test-server-key', 'another-secret', 'Bønner til middag.', 'raw provider body');
+    expect($record->request)->toBeNull();
+    expect($record->response)->toBeNull();
+    Http::assertSentCount($stage === 'review' ? 2 : 1);
+})->with(['generation', 'review']);
+
+it('records HTTP status without storing non-JSON provider error pages', function () {
+    Http::preventStrayRequests();
+    Http::fake(['https://openrouter.ai/api/v1/chat/completions' => Http::response('<html>Private proxy diagnostic</html>', 502)]);
+
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())
+        ->assertServiceUnavailable()->assertDontSee('Private proxy diagnostic');
+
+    expect(AiRequest::query()->sole()->error)->toBe('Laravel\\Ai\\Exceptions\\ProviderOverloadedException: generation; HTTP 502');
+    Http::assertSentCount(1);
+});
+
+it('extracts the upstream error message without retaining the rest of its raw payload', function () {
+    Http::preventStrayRequests();
+    Http::fake(['https://openrouter.ai/api/v1/chat/completions' => Http::response(['error' => [
+        'message' => 'Provider returned error',
+        'metadata' => ['error_type' => 'invalid_request', 'provider_code' => 'INVALID_ARGUMENT', 'raw' => json_encode([
+            'error' => ['message' => 'Unsupported schema for test-server-key: private preference', 'details' => 'private upstream body'],
+        ])],
+    ]], 400)]);
+
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput(['preferences' => 'private preference']))
+        ->assertServiceUnavailable();
+
+    expect(AiRequest::query()->sole()->error)->toContain('HTTP 400', 'error_type=invalid_request',
+        'provider_code=INVALID_ARGUMENT', 'Unsupported schema for [redacted]: [redacted]')
+        ->not->toContain('test-server-key', 'private preference', 'private upstream body');
     Http::assertSentCount(1);
 });
 
