@@ -68,7 +68,8 @@ it('rejects failed recipe reviews without caching or returning the recipe', func
     expect(AiRequest::orderBy('id')->pluck('status')->all())->toBe(['failed', 'ok']);
 })->with(['unlisted' => [['unlisted_ingredient']], 'unused' => [['unused_ingredient']],
     'amount' => [['quantity_mismatch']], 'excluded synonym' => [['excluded_ingredient']],
-    'malformed' => [null], 'unknown issue' => [['unknown']]]);
+    'malformed' => [null], 'unknown issue' => [['unknown']],
+    'too many issues' => [array_fill(0, 43, 'unused_ingredient')]]);
 
 it('records generation and review costs together and reuses only reviewed results', function () {
     Http::preventStrayRequests();
@@ -82,6 +83,8 @@ it('records generation and review costs together and reuses only reviewed result
     $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput())->assertOk();
 
     Http::assertSentCount(2);
+    Http::assertSent(fn ($request) => isset($request['response_format']['json_schema']['schema']['properties']['issues'])
+        && ! isset($request['response_format']['json_schema']['schema']['properties']['issues']['maxItems']));
     expect((float) AiRequest::first()->cost)->toBe(0.012);
     expect(AiRequest::first()->input_tokens)->toBe(200);
     expect(AiRequest::first()->output_tokens)->toBe(40);
@@ -150,6 +153,9 @@ it('returns 503 for incomplete or invalid dinners without exposing provider outp
     fn () => [suggestedDinner(['ingredients' => [['name' => 'Pasta', 'quantity' => -1, 'unit' => 'g']]])],
     fn () => [suggestedDinner(['ingredients' => [['name' => 'Pasta', 'quantity' => 1, 'unit' => 'unknown']]])],
     fn () => [suggestedDinner(['ingredients' => array_fill(0, 2, ['name' => 'Pasta', 'quantity' => 1, 'unit' => 'g'])])],
+    fn () => [suggestedDinner(['ingredients' => array_map(fn (int $number) => [
+        'name' => 'Ingredient '.$number, 'quantity' => 1, 'unit' => 'g',
+    ], range(1, 21))])],
     fn () => [suggestedDinner(['ingredients' => [
         ['name' => 'Pasta', 'quantity' => 200, 'unit' => 'g'],
         ['name' => ' pasta ', 'quantity' => 1, 'unit' => 'kg'],
@@ -328,6 +334,9 @@ it('sends the complete recipe schema through the SDK using the configured server
         && $request['model'] === 'google/gemini-3.1-flash-lite'
         && $request['max_tokens'] === 7000
         && $request['response_format']['type'] === 'json_schema'
-        && isset($request['response_format']['json_schema']['schema']['properties']['dinners'])
+        && isset($request['response_format']['json_schema']['schema']['properties']['dinners']['items']['properties']['ingredients'])
+        && ! isset($request['response_format']['json_schema']['schema']['properties']['dinners']['minItems'])
+        && ! isset($request['response_format']['json_schema']['schema']['properties']['dinners']['maxItems'])
+        && ! isset($request['response_format']['json_schema']['schema']['properties']['dinners']['items']['properties']['ingredients']['maxItems'])
         && ! isset($request['tools']));
 });

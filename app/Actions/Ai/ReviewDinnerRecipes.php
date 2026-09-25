@@ -63,6 +63,7 @@ class ReviewDinnerRecipes implements Agent, HasProviderOptions, HasStructuredOut
     /** @return array<string, Type> */
     public function schema(JsonSchema $schema): array
     {
-        return ['issues' => $schema->array()->max(42)->items($schema->string()->enum(self::ISSUES))->required()];
+        // Keep provider constraints simple; handle() validates the issue count.
+        return ['issues' => $schema->array()->items($schema->string()->enum(self::ISSUES))->required()];
     }
 }

@@ -113,15 +113,20 @@ class GenerateWeekDinners implements Agent, HasProviderOptions, HasStructuredOut
         return $options;
     }
 
-    /** @return array<string, Type> */
+    /**
+     * Array counts are enforced by handle(); nested length bounds can exceed
+     * Gemini's structured-output schema complexity limit.
+     *
+     * @return array<string, Type>
+     */
     public function schema(JsonSchema $schema): array
     {
-        return ['dinners' => $schema->array()->min(1)->max(7)->items($schema->object([
+        return ['dinners' => $schema->array()->items($schema->object([
             'existing_id' => $schema->string()->nullable()->required(),
             'name' => $schema->string()->required(),
             'category' => $schema->string()->enum(['meat', 'fish', 'vegetarian', 'other'])->required(),
             'notes' => $schema->string()->nullable()->required(),
-            'ingredients' => $schema->array()->max(20)->items($schema->object([
+            'ingredients' => $schema->array()->items($schema->object([
                 'name' => $schema->string()->required(),
                 'quantity' => $schema->number()->required(),
                 'unit' => $schema->string()->enum(self::UNITS)->required(),
