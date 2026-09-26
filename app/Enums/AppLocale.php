@@ -14,4 +14,15 @@ enum AppLocale: string
             self::Norwegian => 'Norsk',
         };
     }
+
+    /**
+     * The application locale holding this language's translations (lang/no).
+     */
+    public function translationLocale(): string
+    {
+        return match ($this) {
+            self::English => 'en',
+            self::Norwegian => 'no',
+        };
+    }
 }

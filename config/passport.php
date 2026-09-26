@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\SetLocaleFromAcceptLanguage;
+
 return [
 
     /*
@@ -15,7 +17,8 @@ return [
 
     'guard' => 'web',
 
-    'middleware' => [],
+    // Sign in with Apple at /oauth/token reports errors in the app's language.
+    'middleware' => [SetLocaleFromAcceptLanguage::class],
 
     /*
     |--------------------------------------------------------------------------

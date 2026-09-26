@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
 use Laravel\Passport\Passport;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
-it('attributes REST ingredient and nested writes and removes contributions without deleting a peers recipe', function () {
+it('attributes REST ingredient and nested writes and anonymises them without deleting the households data', function () {
     [$owner, $household] = ownerWithHousehold();
     $member = User::factory()->create(['current_household_id' => $household->id]);
     $household->members()->attach($member, ['role' => HouseholdRole::Member->value]);
@@ -50,14 +50,24 @@ it('attributes REST ingredient and nested writes and removes contributions witho
     }
     expect($dinner->fresh()->content_authors['user_'.$member->id])->toBe(['notes']);
     $household->members()->detach($member);
+    app(AllocateSyncVersion::class)->forget();
+    $cursor = $household->fresh()->sync_version;
     app(DeleteAccount::class)->handle($member);
 
-    foreach ([$ingredient, $item, $entry, $listItem] as $resource) {
-        expect($resource->fresh()->trashed())->toBeTrue()
-            ->and($resource->fresh()->content_authors)->toBeNull()
-            ->and($resource->fresh()->erasure_version)->toBeGreaterThan(0);
+    foreach ([$ingredient, $item, $entry, $listItem, $dinner] as $resource) {
+        expect($resource->fresh()->trashed())->toBeFalse()
+            ->and($resource->fresh()->created_by_user_id)->not->toBe($member->id)
+            ->and($resource->fresh()->content_authors ?? [])->not->toHaveKey('user_'.$member->id)
+            ->and($resource->fresh()->sync_version)->toBeGreaterThan($cursor);
     }
-    expect($dinner->fresh()->trashed())->toBeFalse()
+    // Shared names and amounts stay; only the personal notes go.
+    expect($ingredient->fresh()->name)->toBe('Private ingredient')
+        ->and($item->fresh()->ingredient_id)->toBe($ingredient->id)
+        ->and($item->fresh()->unit)->toBe('My private unit')
+        ->and($listItem->fresh()->name)->toBe('My private item')
+        ->and($entry->fresh()->notes)->toBeNull()
+        ->and($entry->fresh()->erasure_version)->toBeGreaterThan(0)
+        ->and($ingredient->fresh()->erasure_version)->toBe(0)
         ->and($dinner->fresh()->name)->toBe($dinner->name)
         ->and($dinner->fresh()->notes)->toBeNull()
         ->and($plan->fresh()->trashed())->toBeFalse()
@@ -106,25 +116,31 @@ it('prevents stale and future dated offline payloads from restoring erased conte
     expect($dinner->fresh()->notes)->toBe('New recipe instructions');
 });
 
-it('permanently blocks restoration of erased ingredients and their children', function () {
+it('keeps a leaving members ingredient for the recipes and shopping lists that use it', function () {
     [$owner, $household] = ownerWithHousehold();
     $member = User::factory()->create();
-    $ingredient = Ingredient::factory()->for($household)->make();
+    $household->members()->attach($member, ['role' => HouseholdRole::Member->value]);
+    $ingredient = Ingredient::factory()->for($household)->make(['name' => 'Milk', 'created_by_user_id' => $member->id]);
     $ingredient->attributeContentTo($member->id)->save();
     $dinner = Dinner::factory()->for($household)->create(['created_by_user_id' => $owner->id]);
-    $item = DinnerItem::factory()->for($dinner)->for($ingredient)->create();
+    $item = DinnerItem::factory()->for($dinner)->for($ingredient)->create(['quantity' => 2, 'unit' => 'dl']);
+    $list = ShoppingList::factory()->for($household)->create(['created_by_user_id' => $owner->id]);
+    $listItem = ShoppingListItem::factory()->for($list)->for($ingredient)->create();
     app(DeleteAccount::class)->handle($member);
+    app(AllocateSyncVersion::class)->forget();
     $this->travel(1)->seconds();
-    $version = $ingredient->fresh()->erasure_version;
-    $response = app(ApplySyncBatch::class)->handle($household->fresh(), $owner, $household->fresh()->sync_version, [
-        'ingredients' => [['id' => $ingredient->uuid, 'name' => 'Private ingredient', 'updated_at' => now()->toISOString(), 'erasure_version' => $version]],
-        'dinner_items' => [['id' => $item->uuid, 'dinner_id' => $dinner->uuid, 'ingredient_id' => $ingredient->uuid, 'quantity' => 1, 'unit' => 'Private unit', 'erasure_version' => $version]],
-    ]);
 
-    expect($ingredient->fresh()->trashed())->toBeTrue()
-        ->and($item->fresh()->trashed())->toBeTrue()
-        ->and($item->fresh()->unit)->toBeNull()
-        ->and($response['changes']['ingredients'][0]['deleted_at'])->not->toBeNull();
+    expect($ingredient->fresh())->name->toBe('Milk')->created_by_user_id->toBeNull()->content_authors->toBeNull()
+        ->and($ingredient->fresh()->trashed())->toBeFalse()
+        ->and($item->fresh())->ingredient_id->toBe($ingredient->id)->unit->toBe('dl')
+        ->and($listItem->fresh())->ingredient_id->toBe($ingredient->id)
+        ->and($listItem->fresh()->trashed())->toBeFalse();
+
+    // Nothing was erased, so offline edits from the others still apply.
+    app(ApplySyncBatch::class)->handle($household->fresh(), $owner, null, [
+        'ingredients' => [['id' => $ingredient->uuid, 'name' => 'Oat milk', 'updated_at' => now()->toISOString()]],
+    ]);
+    expect($ingredient->fresh()->name)->toBe('Oat milk');
 });
 
 it('attributes new sync children to the authenticated writer and ignores spoofed provenance', function () {
@@ -143,10 +159,12 @@ it('attributes new sync children to the authenticated writer and ignores spoofed
         ->and($item->content_authors)->not->toHaveKey('user_'.$owner->id)
         ->and($item->erasure_version)->toBe(0);
     app(DeleteAccount::class)->handle($member);
-    expect($item->fresh()->trashed())->toBeTrue()->and($list->fresh()->trashed())->toBeFalse();
+    expect($item->fresh())->name->toBe('Private shopping')->created_by_user_id->toBeNull()->content_authors->toBeNull()
+        ->and($item->fresh()->trashed())->toBeFalse()
+        ->and($list->fresh()->trashed())->toBeFalse();
 });
 
-it('erases ingredient text previously copied into legacy detached shopping items', function () {
+it('keeps ingredient text previously copied into legacy detached shopping items', function () {
     [$owner, $household] = ownerWithHousehold();
     $member = User::factory()->create();
     $ingredient = Ingredient::factory()->for($household)->make(['name' => 'Private ingredient']);
@@ -162,12 +180,12 @@ it('erases ingredient text previously copied into legacy detached shopping items
 
     app(DeleteAccount::class)->handle($member);
 
-    expect($item->fresh()->name)->toBe('Item')
-        ->and($item->fresh()->ingredient_id)->toBeNull()
+    expect($item->fresh()->name)->toBe('Private ingredient')
+        ->and($item->fresh()->content_authors)->toBeNull()
         ->and($item->fresh()->trashed())->toBeFalse();
 });
 
-it('preserves provenance when generating shopping lists and erases shared household names', function () {
+it('preserves provenance when generating shopping lists and keeps shared names when a contributor leaves', function () {
     [$owner, $household] = ownerWithHousehold();
     $member = User::factory()->create();
     $household->attributeContentTo($member->id)->fill(['name' => 'Private household'])->save();
@@ -183,9 +201,11 @@ it('preserves provenance when generating shopping lists and erases shared househ
 
     app(DeleteAccount::class)->handle($member);
 
-    expect($household->fresh()->name)->toBe('Household')
-        ->and($list->fresh()->name)->toBe('Shopping list')
-        ->and($item->fresh()->unit)->toBeNull()
+    expect($list->content_authors)->toHaveKey('user_'.$member->id)
+        ->and($item->content_authors)->toHaveKey('user_'.$member->id);
+    expect($household->fresh())->name->toBe('Private household')->content_authors->toBeNull()
+        ->and($list->fresh())->name->toBe($list->name)->content_authors->not->toHaveKey('user_'.$member->id)
+        ->and($item->fresh())->unit->toBe('private unit')->content_authors->not->toHaveKey('user_'.$member->id)
         ->and($list->fresh()->trashed())->toBeFalse()
         ->and($item->fresh()->trashed())->toBeFalse();
 });
@@ -217,14 +237,14 @@ it('rejects writes from a model loaded before account erasure', function () {
     expect($dinner->fresh()->notes)->toBeNull();
 });
 
-it('rejects a household model loaded before its contributed name was erased', function () {
+it('lets the remaining members keep editing a household name a leaving member chose', function () {
     [$owner, $household] = ownerWithHousehold();
     $member = User::factory()->create();
-    $household->attributeContentTo($member->id)->fill(['name' => 'Private name'])->save();
-    $stale = $household->fresh();
+    $household->attributeContentTo($member->id)->fill(['name' => 'Shared name'])->save();
     app(DeleteAccount::class)->handle($member);
 
-    expect(fn () => $stale->attributeContentTo($owner->id)->fill(['name' => 'Private name edited'])->save())
-        ->toThrow(HttpException::class);
-    expect($household->fresh()->name)->toBe('Household');
+    expect($household->fresh())->name->toBe('Shared name')->content_authors->toBeNull();
+
+    $household->fresh()->attributeContentTo($owner->id)->fill(['name' => 'Renamed'])->save();
+    expect($household->fresh())->name->toBe('Renamed')->content_authors->toBe(['user_'.$owner->id => ['name']]);
 });

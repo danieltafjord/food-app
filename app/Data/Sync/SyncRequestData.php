@@ -13,7 +13,9 @@ use Spatie\LaravelData\Data;
  * refused so a device never uploads one household's rows into another.
  * `changes` maps resource key → rows the client has touched since the cursor,
  * each in the client's snake_case shape with a `uuid` `id` and client
- * timestamps. `paged` / `page` split a first sync's download into pages.
+ * timestamps. `paged` / `page` split the download into pages: `paged` on
+ * the first request, then the `next_page` it was given, with the same cursor.
+ * An unpaged pull is capped too, and says `has_more` when it stopped early.
  *
  * @property array<string, array<int, array<string, mixed>>> $changes
  */
@@ -44,8 +46,8 @@ class SyncRequestData extends Data
             'changes' => ['nullable', 'array:dinner_categories,ingredients,dinners,dinner_items,dinner_plans,plan_entries,shopping_lists,shopping_list_items'],
             'changes.*' => ['array'],
             'changes.*.*' => ['array'],
-            // A first sync (no cursor) can ask for the household page by page:
-            // `paged` on the first request, then the `next_page` it was given.
+            // Any sync can ask for its download page by page: `paged` on the
+            // first request, then the `next_page` it was given.
             'paged' => ['sometimes', 'boolean'],
             'page' => ['nullable', 'string', 'max:64'],
         ];

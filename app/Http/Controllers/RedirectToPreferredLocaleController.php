@@ -22,7 +22,7 @@ class RedirectToPreferredLocaleController extends Controller
         $locale = $this->rememberedLocale($request) ?? $this->browserLocale($request);
 
         return redirect()
-            ->route('localized.'.$request->route()->getName(), ['locale' => $locale])
+            ->route('localized.'.$request->route()->getName(), ['locale' => $locale, ...$request->route()->parameters()])
             ->withHeaders(['Vary' => 'Accept-Language, Cookie']);
     }
 

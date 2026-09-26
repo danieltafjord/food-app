@@ -9,31 +9,30 @@ use App\Http\Controllers\Controller;
 use App\Models\HouseholdInvitation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class InvitationAcceptanceController extends Controller
 {
     /**
-     * Accept an invitation addressed to the authenticated user (bound by token).
+     * Accept an invitation (bound by token). The token was mailed to the
+     * invited address, so holding it is the proof: the account may use a
+     * different email, like an Apple "Hide My Email" relay address.
      */
     public function accept(Request $request, HouseholdInvitation $invitation, AcceptInvitation $action): HouseholdData
     {
-        abort_unless($request->user()->hasVerifiedEmail(), 403, 'Verify your email address before responding to household invitations.');
+        abort_unless($request->user()->hasVerifiedEmail(), 403, __('households.verify_email_to_respond'));
 
         return HouseholdData::from($action->handle($invitation, $request->user()));
     }
 
+    /**
+     * Decline an invitation (bound by token), on the same terms as accepting.
+     */
     public function decline(Request $request, HouseholdInvitation $invitation, DeclineInvitation $action): JsonResponse
     {
-        abort_unless($request->user()->hasVerifiedEmail(), 403, 'Verify your email address before responding to household invitations.');
-
-        abort_unless(
-            Str::lower($invitation->email) === Str::lower($request->user()->email),
-            403,
-        );
+        abort_unless($request->user()->hasVerifiedEmail(), 403, __('households.verify_email_to_respond'));
 
         $action->handle($invitation);
 
-        return response()->json(['message' => 'Invitation declined.']);
+        return response()->json(['message' => __('households.invitation_declined')]);
     }
 }

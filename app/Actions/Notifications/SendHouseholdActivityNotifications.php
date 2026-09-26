@@ -69,9 +69,11 @@ class SendHouseholdActivityNotifications
             ->whereNull('notified_at')
             ->when($householdId !== null, fn ($query) => $query->where('household_id', $householdId));
 
+        // Deleted, not marked notified: a dropped tick must not count as a
+        // trip underway and silence the next "started shopping".
         $pendingActivity()
             ->where('created_at', '<', $this->now->subMinutes(self::STALE_MINUTES))
-            ->update(['notified_at' => $this->now]);
+            ->delete();
 
         $pending = $pendingActivity()->orderBy('id')->get();
 
@@ -308,8 +310,8 @@ class SendHouseholdActivityNotifications
             ->whereKeyNot($actor->id)
             ->where('current_household_id', $household->id)
             ->whereNull('deactivated_at')
-            ->whereHas('pushTokens')
-            ->with(['pushTokens' => fn ($query) => $query->latest('updated_at')])
+            ->whereHas('pushTokens', fn ($query) => $query->deliverable())
+            ->with(['pushTokens' => fn ($query) => $query->deliverable()->latest('updated_at')])
             ->get()
             ->filter(fn (User $recipient): bool => $recipient->wantsNotification($topic, $shoppingListUuid));
 

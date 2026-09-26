@@ -378,3 +378,27 @@ it('sends the complete recipe schema through the SDK using the configured server
         && ! isset($request['response_format']['json_schema']['schema']['properties']['dinners']['items']['properties']['ingredients']['maxItems'])
         && ! isset($request['tools']));
 });
+
+it('counts an IPv6 caller\'s daily budget by its /64', function () {
+    config(['assistance.week_planning.ip' => 1]);
+    ReviewDinnerRecipes::fake([['issues' => []], ['issues' => []]]);
+    GenerateWeekDinners::fake([['dinners' => [suggestedDinner()]], ['dinners' => [suggestedDinner()]]]);
+    $from = fn (string $ip, string $preferences) => $this->withServerVariables(['REMOTE_ADDR' => $ip])
+        ->postJson('/api/v1/ai/plan-week', weekSuggestionInput(['preferences' => $preferences]));
+
+    $from('2001:db8:1:2::1', 'One')->assertOk();
+    $from('2001:db8:1:2:ffff::9', 'Two')->assertTooManyRequests()->assertJsonPath('code', 'daily_limit');
+    $from('2001:db8:1:3::1', 'Three')->assertOk();
+});
+
+it('rate-limits an IPv6 caller by its /64', function () {
+    config(['assistance.enabled' => false]);
+    $from = fn (string $ip) => $this->withServerVariables(['REMOTE_ADDR' => $ip])->postJson('/api/v1/ai/plan-week', weekSuggestionInput());
+
+    foreach (range(1, 6) as $host) {
+        $from("2001:db8:1:2::{$host}")->assertServiceUnavailable();
+    }
+    $from('2001:db8:1:2::99')->assertTooManyRequests();
+    $from('2001:db8:1:3::1')->assertServiceUnavailable();
+    $from('192.0.2.1')->assertServiceUnavailable();
+});

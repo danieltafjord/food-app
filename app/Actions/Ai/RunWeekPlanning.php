@@ -22,7 +22,7 @@ class RunWeekPlanning
             $this->usage->reject('unavailable', 503);
         }
         // 192 bits of the HMAC is plenty, and keeps the scope inside ai_daily_usage.scope (64 chars).
-        $scope = 'planner:'.substr(hash_hmac('sha256', $ip, (string) config('app.key')), 0, 48);
+        $scope = 'planner:'.substr(hash_hmac('sha256', self::clientNetwork($ip), (string) config('app.key')), 0, 48);
         $model = $this->configuration->model('suggestions');
         $key = $scope.':v3:'.hash('sha256', json_encode([$model, $this->configuration->reasoningEffort('suggestions'), $context], JSON_THROW_ON_ERROR));
         if (is_array($cached = Cache::get($key))) {
@@ -79,6 +79,25 @@ class RunWeekPlanning
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Who a guest request counts against: the IPv4 address, or the /64 of an
+     * IPv6 one. A single IPv6 subscriber is usually given a whole /64, so
+     * keying by the full address would give one caller endless budgets.
+     */
+    public static function clientNetwork(string $ip): string
+    {
+        $packed = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false ? inet_pton($ip) : false;
+        if ($packed === false) {
+            return $ip;
+        }
+        // An IPv4 client seen through a dual-stack socket (::ffff:a.b.c.d).
+        if (str_starts_with($packed, str_repeat("\0", 10)."\xff\xff")) {
+            return (string) inet_ntop(substr($packed, 12));
+        }
+
+        return inet_ntop(substr($packed, 0, 8).str_repeat("\0", 8)).'/64';
     }
 
     /** Keep useful HTTP diagnostics without retaining raw provider bodies or guest input. */

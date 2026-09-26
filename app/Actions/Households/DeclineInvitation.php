@@ -13,7 +13,7 @@ class DeclineInvitation
             $invitation = HouseholdInvitation::query()->lockForUpdate()->findOrFail($invitation->id);
 
             if (! $invitation->isPending()) {
-                abort(409, 'This invitation is no longer valid.');
+                abort(409, __('households.invitation_invalid'));
             }
 
             $invitation->update(['declined_at' => now()]);

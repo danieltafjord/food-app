@@ -26,6 +26,10 @@ class SyncController extends ApiController
             ], Response::HTTP_CONFLICT);
         }
 
-        return response()->json($action->handle($household, $request->user(), $data->cursor, $data->changes, $data->paged, $data->page));
+        return response()->json([
+            ...$action->handle($household, $request->user(), $data->cursor, $data->changes, $data->paged, $data->page),
+            // Lets the app correct for a device clock that is off.
+            'server_time' => now()->utc()->format('Y-m-d\\TH:i:s.v\\Z'),
+        ]);
     }
 }

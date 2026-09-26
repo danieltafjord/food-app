@@ -32,7 +32,7 @@ The mobile app never sees a password. It delegates login to the web auth pages
 `AppServiceProvider`). `/oauth/*` routes are provided by Passport.
 
 > Create the public client once per environment:
-> `php artisan passport:client --public --name="Food App Mobile" --redirect_uri="foodapp://oauth/callback"`
+> `php artisan passport:client --public --name="Handlelista" --redirect_uri="foodapp://oauth/callback"`
 
 ## Conventions
 
@@ -66,9 +66,13 @@ Resource endpoints below operate on the caller's **active household**
 
 ## Auth & session
 
+Send `Accept-Language: nb` or `en`; error messages follow it (else the user's saved language).
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/me` | The authenticated user + their current household |
+| `GET` | `/me` | The authenticated user (incl. `has_password`, `needs_name`) + their current household |
+| `PATCH` | `/me/profile` | Set the display name (`{ name }`, 1–255 chars); clears `needs_name` |
+| `DELETE` | `/me` | Delete the account (204). Proof: Apple `{ identity_token, nonce, authorization_code? }`, or `{ password }`, or — only without a password — `{ email }` typed to confirm. Wrong/missing proof: 422 |
 | `POST` | `/auth/logout` | Revoke the current access token |
 | `GET` | `/auth/devices` | List the user's active tokens (one per signed-in device) |
 | `DELETE` | `/auth/devices/{token}` | Revoke a specific device's token |
@@ -99,7 +103,7 @@ Managed by an owner of the active household:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/household/invitations` | List the household's invitations |
-| `POST` | `/household/invitations` | Invite by email (`{ email, role? }`) — sends an email |
+| `POST` | `/household/invitations` | Invite by email (`{ email, role? }`) — sends an email. Needs a verified email (403); rate-limited per sender, household and recipient (429) |
 | `DELETE` | `/household/invitations/{invitation}` | Revoke a pending invitation |
 
 Acted on by the invited user (the token comes from the invitation email; **not**
@@ -107,7 +111,7 @@ scoped to an active household):
 
 | Method | Path | Purpose | Notes |
 | --- | --- | --- | --- |
-| `POST` | `/invitations/{token}/accept` | Join the household | The token's email must match the user's |
+| `POST` | `/invitations/{token}/accept` | Join the household | Any verified user holding the token (their email may differ, e.g. Apple relay addresses); 409 once used/expired or when the sender no longer owns the household |
 | `POST` | `/invitations/{token}/decline` | Decline | |
 
 ## Ingredients (active household)

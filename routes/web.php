@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\SocialiteController;
+use App\Http\Controllers\InvitationPageController;
 use App\Http\Controllers\OAuth\ApproveHouseholdAuthorizationController;
 use App\Http\Controllers\PublicPageController;
 use App\Http\Controllers\RedirectToPreferredLocaleController;
@@ -29,6 +30,8 @@ Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
 Route::get('/', RedirectToPreferredLocaleController::class)->name('home');
 Route::get('/privacy', RedirectToPreferredLocaleController::class)->name('privacy');
 Route::get('/support', RedirectToPreferredLocaleController::class)->name('support');
+// Invitation emails link here; the app opens these links itself when installed.
+Route::get('/invitations/{token}', RedirectToPreferredLocaleController::class)->name('invitation');
 
 Route::prefix('{locale}')
     ->whereIn('locale', config('handlelista.locales'))
@@ -38,6 +41,7 @@ Route::prefix('{locale}')
         Route::get('/', [PublicPageController::class, 'home'])->name('home');
         Route::get('/privacy', [PublicPageController::class, 'privacy'])->name('privacy');
         Route::get('/support', [PublicPageController::class, 'support'])->name('support');
+        Route::get('/invitations/{token}', InvitationPageController::class)->name('invitation');
     });
 
 Route::middleware(['auth', 'verified'])->group(function () {

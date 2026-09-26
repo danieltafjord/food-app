@@ -32,6 +32,7 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
     protected $attributes = [
         'ai_categorization_enabled' => false,
         'ai_suggestions_enabled' => false,
+        'needs_name' => false,
     ];
 
     /**
@@ -46,6 +47,7 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'is_admin' => 'boolean',
+            'needs_name' => 'boolean',
             'deactivated_at' => 'datetime',
             'ai_categorization_enabled' => 'boolean',
             'ai_suggestions_enabled' => 'boolean',

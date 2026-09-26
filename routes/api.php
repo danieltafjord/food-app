@@ -37,6 +37,7 @@ Route::prefix('v1')
         // Authenticated user + token management
         Route::get('me', [MeController::class, 'show'])->name('me');
         Route::patch('me/settings', [MeController::class, 'updateSettings'])->name('me.settings.update');
+        Route::patch('me/profile', [MeController::class, 'updateProfile'])->name('me.profile.update');
         Route::post('auth/logout', LogoutController::class)->name('auth.logout');
         Route::get('auth/devices', [DeviceController::class, 'index'])->name('auth.devices.index');
         Route::delete('auth/devices/{token}', [DeviceController::class, 'destroy'])->name('auth.devices.destroy');
@@ -64,14 +65,14 @@ Route::prefix('v1')
         // Scoped to the active household
         Route::middleware('household.active')->group(function () {
             // Local-first mobile sync: one batched push/pull of all syncable data.
-            Route::post('sync', [SyncController::class, 'store'])->name('sync');
+            Route::post('sync', [SyncController::class, 'store'])->middleware('throttle:first-sync')->name('sync');
 
             Route::get('household/members', [MemberController::class, 'index'])->name('household.members.index');
             Route::patch('household/members/{user}', [MemberController::class, 'update'])->name('household.members.update');
             Route::delete('household/members/{user}', [MemberController::class, 'destroy'])->name('household.members.destroy');
 
             Route::get('household/invitations', [InvitationController::class, 'index'])->name('household.invitations.index');
-            Route::post('household/invitations', [InvitationController::class, 'store'])->name('household.invitations.store');
+            Route::post('household/invitations', [InvitationController::class, 'store'])->middleware('throttle:invitations')->name('household.invitations.store');
             Route::delete('household/invitations/{invitation}', [InvitationController::class, 'destroy'])->name('household.invitations.destroy');
 
             // Catalogue & recipes

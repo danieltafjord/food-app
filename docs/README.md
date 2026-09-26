@@ -1,4 +1,4 @@
-# Food App
+# Handlelista
 
 A shared meal-planning backend. A **household** (you + whoever you invite) keeps a
 catalogue of **ingredients**, builds **dinners** (recipes) from them, schedules those
@@ -45,7 +45,7 @@ php artisan migrate --seed
 php artisan passport:keys
 
 # A first-party public client for the mobile app (Authorization Code + PKCE)
-php artisan passport:client --public --name="Food App Mobile" \
+php artisan passport:client --public --name="Handlelista" \
     --redirect_uri="foodapp://oauth/callback"
 ```
 

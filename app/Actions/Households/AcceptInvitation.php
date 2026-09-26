@@ -3,18 +3,20 @@
 namespace App\Actions\Households;
 
 use App\Actions\Notifications\RecordHouseholdActivity;
+use App\Enums\HouseholdRole;
 use App\Models\Household;
 use App\Models\HouseholdInvitation;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class AcceptInvitation
 {
     public function __construct(private RecordHouseholdActivity $recordActivity) {}
 
     /**
-     * Accept an invitation, joining the user to the household.
+     * Accept an invitation, joining the user to the household. Whoever holds
+     * the token may accept it, whatever their own email address; it only
+     * counts while the owner who sent it still owns the household.
      */
     public function handle(HouseholdInvitation $invitation, User $user): Household
     {
@@ -22,12 +24,13 @@ class AcceptInvitation
             $household = Household::query()->lockForUpdate()->findOrFail($invitation->household_id);
             $invitation = HouseholdInvitation::query()->lockForUpdate()->findOrFail($invitation->id);
 
-            if (! $invitation->isPending()) {
-                abort(409, 'This invitation is no longer valid.');
-            }
+            $inviterIsOwner = $invitation->invited_by_user_id !== null && $household->members()
+                ->whereKey($invitation->invited_by_user_id)
+                ->wherePivot('role', HouseholdRole::Owner->value)
+                ->exists();
 
-            if (Str::lower($invitation->email) !== Str::lower($user->email)) {
-                abort(403, 'This invitation was sent to a different email address.');
+            if (! $invitation->isPending() || ! $inviterIsOwner) {
+                abort(409, __('households.invitation_invalid'));
             }
 
             if (! $household->hasMember($user)) {

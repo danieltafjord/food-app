@@ -8,6 +8,7 @@ use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\LogApiRequest;
 use App\Http\Middleware\RejectApiTokens;
+use App\Http\Middleware\SetLocaleFromAcceptLanguage;
 use App\Http\Middleware\WrapWritesInTransaction;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
@@ -44,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->api(append: [
             EnsureUserIsActive::class.':api',
+            SetLocaleFromAcceptLanguage::class,
         ]);
 
         // Log API requests before authentication so rejected calls (401, 403,

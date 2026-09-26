@@ -1,6 +1,8 @@
 <?php
 
+use App\Enums\HouseholdRole;
 use App\Events\HouseholdDataChanged;
+use App\Events\HouseholdMemberRemoved;
 use App\Models\Household;
 use App\Models\ShoppingList;
 use App\Models\User;
@@ -123,6 +125,26 @@ it('keeps other households and malformed channels closed', function () {
     authorizeChannel('presence-household.'.$this->household->id.'.list.not-a-uuid')->assertForbidden();
     authorizeChannel('presence-household.'.$this->household->id.'.week.monday')->assertForbidden();
 });
+
+it('tells the household when a member is removed or leaves, and keeps them off its channel', function (bool $leaves) {
+    Event::fake([HouseholdMemberRemoved::class]);
+    useReverb();
+    $member = User::factory()->create(['current_household_id' => $this->household->id]);
+    $this->household->members()->attach($member, ['role' => HouseholdRole::Member->value]);
+    Passport::actingAs($member);
+    authorizeChannel('private-household.'.$this->household->id)->assertOk();
+
+    Passport::actingAs($leaves ? $member : $this->user);
+    $this->deleteJson("/api/v1/household/members/{$member->id}")->assertNoContent();
+
+    Event::assertDispatchedTimes(HouseholdMemberRemoved::class, 1);
+    Event::assertDispatched(HouseholdMemberRemoved::class, fn (HouseholdMemberRemoved $event): bool => $event->broadcastOn()[0]->name === 'private-household.'.$this->household->id
+        && $event->broadcastAs() === 'household.member-removed'
+        && $event->broadcastWith() === ['user_id' => $member->id]);
+
+    Passport::actingAs($member);
+    authorizeChannel('private-household.'.$this->household->id)->assertForbidden();
+})->with(['removed' => false, 'leaves' => true]);
 
 it('refuses channel auth without an app token', function () {
     useReverb();

@@ -42,7 +42,7 @@ it('validates custom category names', function (mixed $name) {
     $this->postJson('/api/v1/dinner-categories', ['name' => $name])->assertUnprocessable()->assertJsonValidationErrors('name');
 })->with(['', '   ', str_repeat('x', 81), [['not a name']]]);
 
-it('erases category contributions and clears references when its creator deletes their account', function () {
+it('keeps a category and the recipes filed under it when its creator deletes their account', function () {
     $member = User::factory()->create();
     $this->household->members()->attach($member, ['role' => HouseholdRole::Member->value]);
     $category = $this->household->dinnerCategories()->create(['name' => 'Personal label']);
@@ -50,6 +50,6 @@ it('erases category contributions and clears references when its creator deletes
     // Keep the dinner owned/authored entirely by the remaining household member.
     $dinner->forceFill(['content_authors' => null])->withoutContentAttribution()->save();
     app(DeleteAccount::class)->handle($this->user);
-    expect($category->fresh())->name->toBe('Category')->deleted_at->not->toBeNull();
-    expect($dinner->fresh())->category->toBeNull()->deleted_at->toBeNull();
+    expect($category->fresh())->name->toBe('Personal label')->deleted_at->toBeNull()->content_authors->toBeNull();
+    expect($dinner->fresh())->category->toBe($category->uuid)->deleted_at->toBeNull();
 });

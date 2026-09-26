@@ -12,7 +12,12 @@ createInertiaApp({
     // so the app shell (sidebar, menus, admin routes) ships with them rather
     // than with the public and sign-in pages the mobile app opens.
     layout: (name) => {
-        if (name === 'Welcome' || name === 'Privacy' || name === 'Support') {
+        if (
+            name === 'Welcome' ||
+            name === 'Privacy' ||
+            name === 'Support' ||
+            name === 'Invitation'
+        ) {
             return PublicLayout;
         }
 

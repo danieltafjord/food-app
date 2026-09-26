@@ -27,10 +27,16 @@ class InvitationController extends ApiController
         return InvitationData::collect($invitations, DataCollection::class);
     }
 
+    /**
+     * Invite someone by email. Only people who have verified their own
+     * address may send invitations, which keeps throwaway accounts from
+     * using them to send mail.
+     */
     public function store(InvitationInputData $data, Request $request, InviteMember $action): InvitationData
     {
         $household = $this->currentHousehold($request);
         $this->authorize('manage', $household);
+        abort_unless($request->user()->hasVerifiedEmail(), 403, __('households.verify_email_to_invite'));
 
         return InvitationData::fromInvitation(
             $action->handle($household, $request->user(), $data),

@@ -52,10 +52,17 @@ use Throwable;
  *     a row). Rows carrying `deleted_at` become tombstones: the row is kept,
  *     soft-deleted, and its children are tombstoned with it. A tombstone for a
  *     uuid the server never saw is a no-op.
+ *     A row identical to the stored one is not rewritten, so re-uploading
+ *     what the server already has (an interrupted first sync re-seeds
+ *     everything) moves no version and wakes no peer. Ids and parent ids are
+ *     compared in lower case, as Postgres stores uuids.
  *  2. Outgoing collects every row in the household with a version above the
  *     client's cursor, tombstones included, plus any row the client pushed but
  *     lost on (so it converges on the server copy). A first sync (no cursor)
- *     gets only live rows whose parents are live.
+ *     gets only live rows whose parents are live. A pull is capped at about a
+ *     page of rows (see collectPull), cut between versions: the cursor it
+ *     returns is the last version it sent in full, and `has_more` says the
+ *     next pull has more.
  *
  * Identity is the client `uuid`; the integer PK stays internal. Ownership is
  * always the authenticated active household — never the client — so a uuid
@@ -206,7 +213,8 @@ class ApplySyncBatch
                     'scheduled_date' => ['required', 'date_format:Y-m-d'],
                     'servings' => ['required', 'integer', 'min:1', 'max:99'],
                     'meal_type' => ['required', Rule::enum(MealType::class)],
-                    'notes' => ['nullable', 'string', 'max:5000'],
+                    // The column (and the REST API) take 255.
+                    'notes' => ['nullable', 'string', 'max:255'],
                 ],
             ],
             'shopping_lists' => [
@@ -247,7 +255,8 @@ class ApplySyncBatch
                     'name' => ['nullable', 'required_without:ingredient_id', 'string', 'max:255'],
                     'quantity' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
                     'unit' => ['nullable', 'string', 'max:50'],
-                    'is_checked' => ['nullable', 'boolean'],
+                    // NOT NULL in the database: omit it rather than send null.
+                    'is_checked' => ['sometimes', 'boolean'],
                     'is_generated' => ['sometimes', 'boolean'],
                 ],
             ],
@@ -262,6 +271,7 @@ class ApplySyncBatch
      *     changes: array<string, array<int, array<string, mixed>>>,
      *     rejected: array<string, array<int, array{id: ?string, code: string, message: string}>>,
      *     remaps: array<string, array<string, string>>,
+     *     has_more?: bool,
      *     next_page?: string|null,
      * }
      */
@@ -269,11 +279,11 @@ class ApplySyncBatch
     {
         $resources = $this->resources();
         $this->assertBatchSize($changes);
-        // A first sync may download the household in pages. The first page
-        // does everything an unpaged first sync does (push, merge, lock);
-        // later pages only read on from where the previous one stopped.
-        $paged = $cursor === null && $paged;
-        $continuation = $paged ? $this->decodePage($page, count($resources)) : null;
+        // A client may ask for the download in pages (`paged`), then follow
+        // `next_page` with the same cursor. The first page does everything an
+        // unpaged sync does (push, merge, lock); later pages only read on from
+        // where the previous one stopped.
+        $continuation = $paged ? $this->decodePage($page, count($resources), $cursor !== null) : null;
 
         $incoming = [];
         foreach ($resources as $key => $resource) {
@@ -287,13 +297,14 @@ class ApplySyncBatch
         // household's version. Answer from the household row the middleware
         // loaded — no transaction, no lock, no table scans.
         $current = (int) $household->sync_version;
-        if ($incoming === [] && $cursor !== null && $cursor >= $current) {
+        if ($incoming === [] && $cursor !== null && $cursor >= $current && $continuation === null) {
             return [
                 'cursor' => $current,
                 'household_id' => $household->id,
                 'changes' => array_fill_keys(array_keys($resources), []),
                 'rejected' => [],
                 'remaps' => [],
+                'has_more' => false,
             ];
         }
 
@@ -328,7 +339,7 @@ class ApplySyncBatch
             $version = $continuation['version'] ?? $state->allocatedVersion() ?? $committed;
 
             if ($paged) {
-                [$outgoing, $nextPage] = $this->collectFirstSyncPage($household, $resources, $state, $version, $continuation);
+                [$outgoing, $nextPage] = $this->collectPage($household, $resources, $cursor, $state, $version, $continuation);
 
                 return [
                     'cursor' => $version,
@@ -340,32 +351,37 @@ class ApplySyncBatch
                 ];
             }
 
-            $outgoing = [];
-            foreach ($resources as $key => $resource) {
-                $outgoing[$key] = $this->collectOutgoing($household, $key, $resource, $cursor, $state);
-            }
+            // Unpaged: app builds from before paging, which never follow `next_page`.
+            [$outgoing, $completeThrough] = $this->collectPull($household, $resources, $cursor, $state);
 
             return [
-                'cursor' => $version,
+                'cursor' => $completeThrough ?? $version,
                 'household_id' => $household->id,
                 'changes' => $outgoing,
                 'rejected' => $state->rejected,
                 'remaps' => $state->remaps,
+                'has_more' => $completeThrough !== null,
             ];
         });
     }
 
     /**
-     * One page of a first sync: live rows in resource (dependency) order and
-     * id order, at most `handlelista.sync_page_rows` of them, plus — on the first page — every row
-     * the push must return whatever its page (a pushed row the server kept its
-     * own copy of, tombstones included).
+     * One page of a paged pull, at most `handlelista.sync_page_rows` rows, in
+     * resource (dependency) order, plus — on the first page — every row the
+     * push must return whatever its page (a pushed row the server kept its own
+     * copy of, tombstones included).
      *
-     * @param  array<string, array{fks: array<string, string>, query: callable, serialize: callable}>  $resources
-     * @param  array{version: int, resource: int, after: int}|null  $continuation
+     * A first sync (no cursor) pages through live rows in id order. A pull
+     * with a cursor pages through the rows above it up to the version the
+     * first page was read at, tombstones included, in (sync_version, id)
+     * order; rows written meanwhile have a higher version and come with the
+     * next pull.
+     *
+     * @param  array<string, array{fks: array<string, string>, query: callable(Household, bool): Builder, serialize: callable}>  $resources
+     * @param  array{version: int, resource: int, after: int, afterVersion: int|null}|null  $continuation
      * @return array{0: array<string, array<int, array<string, mixed>>>, 1: string|null}
      */
-    private function collectFirstSyncPage(Household $household, array $resources, SyncBatchState $state, int $version, ?array $continuation): array
+    private function collectPage(Household $household, array $resources, ?int $cursor, SyncBatchState $state, int $version, ?array $continuation): array
     {
         $keys = array_keys($resources);
         $outgoing = array_fill_keys($keys, []);
@@ -388,23 +404,32 @@ class ApplySyncBatch
         for ($index = $continuation['resource'] ?? 0; $index < count($keys); $index++) {
             $key = $keys[$index];
             $resource = $resources[$key];
-            $query = ($resource['query'])($household, true);
-            $idColumn = $query->getModel()->qualifyColumn('id');
-            $models = $query
-                ->where($idColumn, '>', $index === ($continuation['resource'] ?? 0) ? ($continuation['after'] ?? 0) : 0)
-                ->orderBy($idColumn)
-                ->limit($budget + 1)
-                ->get();
+            $resumes = $continuation !== null && $index === $continuation['resource'];
+            if ($cursor === null) {
+                $query = ($resource['query'])($household, true);
+                $idColumn = $query->getModel()->qualifyColumn('id');
+                $query->where($idColumn, '>', $resumes ? $continuation['after'] : 0)->orderBy($idColumn);
+            } else {
+                $query = $this->pullQuery($household, $resource, $cursor)->where('sync_version', '<=', $version);
+                if ($resumes) {
+                    $query->where(fn (Builder $query) => $query
+                        ->where('sync_version', '>', $continuation['afterVersion'])
+                        ->orWhere(fn (Builder $query) => $query->where('sync_version', $continuation['afterVersion'])->where('id', '>', $continuation['after'])));
+                }
+            }
+            $models = $query->limit($budget + 1)->get();
             $hasMore = $models->count() > $budget;
-            $models = $models->take($budget)->reject(fn (Model $model) => isset($sent[$key][$model->getAttribute('uuid')]))->values();
+            $models = $models->take($budget);
+            $last = $models->last();
+            $models = $models->reject(fn (Model $model) => isset($sent[$key][$model->getAttribute('uuid')]))->values();
             array_push($outgoing[$key], ...$this->serializeModels($resource, $models, $state));
             $budget -= $models->count();
 
             if ($hasMore) {
-                return [$outgoing, $this->encodePage($version, $index, (int) $models->last()?->getKey())];
+                return [$outgoing, $this->encodePage($version, $index, (int) $last->getKey(), $cursor === null ? null : (int) $last->getAttribute('sync_version'))];
             }
             if ($budget <= 0) {
-                return [$outgoing, $index + 1 < count($keys) ? $this->encodePage($version, $index + 1, 0) : null];
+                return [$outgoing, $index + 1 < count($keys) ? $this->encodePage($version, $index + 1, 0, $cursor === null ? null : 0) : null];
             }
         }
 
@@ -428,22 +453,29 @@ class ApplySyncBatch
         return $models->map(fn (Model $model): array => $this->serializeRow($resource, $model, $state))->values()->all();
     }
 
-    private function encodePage(int $version, int $resource, int $after): string
+    /**
+     * `version.resource.id` for a first sync; `version.resource.sync_version.id`
+     * for a pull with a cursor.
+     */
+    private function encodePage(int $version, int $resource, int $after, ?int $afterVersion): string
     {
-        return $version.'.'.$resource.'.'.$after;
+        return implode('.', array_filter([$version, $resource, $afterVersion, $after], fn (?int $part): bool => $part !== null));
     }
 
-    /** @return array{version: int, resource: int, after: int}|null */
-    private function decodePage(?string $page, int $resourceCount): ?array
+    /** @return array{version: int, resource: int, after: int, afterVersion: int|null}|null */
+    private function decodePage(?string $page, int $resourceCount, bool $hasCursor): ?array
     {
         if ($page === null) {
             return null;
         }
-        if (preg_match('/^(\d{1,18})\.(\d{1,2})\.(\d{1,18})$/', $page, $match) !== 1 || (int) $match[2] >= $resourceCount) {
+        $pattern = $hasCursor ? '/^(\d{1,18})\.(\d{1,2})\.(\d{1,18})\.(\d{1,18})$/' : '/^(\d{1,18})\.(\d{1,2})\.(\d{1,18})$/';
+        if (preg_match($pattern, $page, $match) !== 1 || (int) $match[2] >= $resourceCount) {
             throw ValidationException::withMessages(['page' => 'That page does not exist.']);
         }
 
-        return ['version' => (int) $match[1], 'resource' => (int) $match[2], 'after' => (int) $match[3]];
+        return $hasCursor
+            ? ['version' => (int) $match[1], 'resource' => (int) $match[2], 'afterVersion' => (int) $match[3], 'after' => (int) $match[4]]
+            : ['version' => (int) $match[1], 'resource' => (int) $match[2], 'afterVersion' => null, 'after' => (int) $match[3]];
     }
 
     private function committedVersion(Household $household, bool $lock): int
@@ -499,7 +531,7 @@ class ApplySyncBatch
         $uuids = [];
         foreach ($rows as $row) {
             if (is_array($row) && Str::isUuid($row['id'] ?? null)) {
-                $uuids[$row['id']] = true;
+                $uuids[strtolower($row['id'])] = true;
             }
         }
         if ($uuids === []) {
@@ -532,12 +564,15 @@ class ApplySyncBatch
      */
     private function applyRow(Household $household, string $key, array $resource, array $row, SyncBatchState $state, array &$existing, CarbonImmutable $now, int $userId, ?int $cursor): void
     {
+        // Rejections name the row as the client knows it.
+        $clientId = is_string($row['id'] ?? null) ? $row['id'] : null;
+        $row = $this->normaliseIds($key, $resource, $row);
         $uuid = $row['id'] ?? null;
         $isTombstone = ! empty($row['deleted_at']);
 
         $validator = Validator::make($row, $isTombstone ? $this->baseRules() : $this->baseRules() + $resource['rules']);
         if ($validator->fails()) {
-            $state->reject($key, is_string($uuid) ? $uuid : null, 'invalid', $validator->errors()->first());
+            $state->reject($key, $clientId, 'invalid', $validator->errors()->first());
 
             return;
         }
@@ -547,7 +582,7 @@ class ApplySyncBatch
             $incomingDeletedAt = $isTombstone ? $this->clientTime($row['deleted_at'], $now) : null;
             $incomingCreatedAt = $this->clientTime($row['created_at'] ?? null, $now);
         } catch (Throwable) {
-            $state->reject($key, $uuid, 'invalid', 'Timestamps must be ISO-8601.');
+            $state->reject($key, $clientId, 'invalid', 'Timestamps must be ISO-8601.');
 
             return;
         }
@@ -557,13 +592,12 @@ class ApplySyncBatch
         if ($model !== null && ! $this->isOwned($model, $resource, $household, $state)) {
             // Another household's row (or a uuid collision): behave as if it did not exist.
             if (! $isTombstone) {
-                $state->reject($key, $uuid, 'unknown_id', 'That id belongs to another household.');
+                $state->reject($key, $clientId, 'unknown_id', 'That id belongs to another household.');
             }
 
             return;
         }
 
-        $originalUuid = $uuid;
         while ($key === 'dinner_items' && $model?->merged_into_uuid) {
             $canonical = DinnerItem::withTrashed()->where('uuid', $model->merged_into_uuid)->firstOrFail();
             $state->remaps[$key][$uuid] = $canonical->uuid;
@@ -633,7 +667,7 @@ class ApplySyncBatch
 
         $foreignKeys = $this->resolveForeignKeys($resource, $row, $state);
         if (is_string($foreignKeys)) {
-            $state->reject($key, $originalUuid, 'unknown_parent', $foreignKeys);
+            $state->reject($key, $clientId, 'unknown_parent', $foreignKeys);
 
             return;
         }
@@ -641,7 +675,7 @@ class ApplySyncBatch
         if ($key === 'dinners' && isset($row['category'])) {
             $categoryValidator = Validator::make($row, ['category' => [new DinnerCategoryReference($household->id, allowDeleted: true)]]);
             if ($categoryValidator->fails()) {
-                $state->reject($key, $uuid, Str::isUuid($row['category']) ? 'unknown_parent' : 'invalid', $categoryValidator->errors()->first());
+                $state->reject($key, $clientId, Str::isUuid($row['category']) ? 'unknown_parent' : 'invalid', $categoryValidator->errors()->first());
 
                 return;
             }
@@ -654,7 +688,7 @@ class ApplySyncBatch
         // A picture can only be attached from the household's own uploads.
         if ($key === 'dinners' && isset($row['image_path']) && $row['image_path'] !== $model->image_path
             && ! DinnerImage::query()->where('household_id', $household->id)->where('path', $row['image_path'])->exists()) {
-            $state->reject($key, $uuid, 'invalid', 'Unknown image.');
+            $state->reject($key, $clientId, 'invalid', 'Unknown image.');
 
             return;
         }
@@ -684,15 +718,23 @@ class ApplySyncBatch
         $attributes['updated_at'] = $incomingUpdatedAt;
         $attributes['deleted_at'] = null; // A newer live version restores a tombstone.
 
-        // Every existing row here was read after the batch took the household lock.
-        $model->forceFill($attributes)->attributeContentTo($userId)->loadedUnderHouseholdLock()->stampSync($state->version(), $now);
-        Model::withoutTimestamps(fn () => $model->save());
+        $model->forceFill($attributes);
+        // The stored row already says this (the client timestamps aside): a
+        // re-upload. Rewriting it would give it a new version, which every
+        // peer would download again and be notified about.
+        if ($model->exists && ! $model->isDirty(array_diff(array_keys($attributes), ['created_at', 'updated_at']))) {
+            $model->discardChanges();
+        } else {
+            // Every existing row here was read after the batch took the household lock.
+            $model->attributeContentTo($userId)->loadedUnderHouseholdLock()->stampSync($state->version(), $now);
+            Model::withoutTimestamps(fn () => $model->save());
+            if ($key === 'dinner_items') {
+                $state->wroteItemFor((int) $model->getAttribute('dinner_id'));
+            }
+        }
 
         $existing[$uuid] = $model;
         $state->remember($key, $uuid, $model->getKey());
-        if ($key === 'dinner_items') {
-            $state->wroteItemFor((int) $model->getAttribute('dinner_id'));
-        }
         $state->markLive($key, $model->getKey());
         if ($key === 'ingredients') {
             if ($previousName !== null && SyncBatchState::nameKey($previousName) !== SyncBatchState::nameKey($model->name)) {
@@ -700,6 +742,30 @@ class ApplySyncBatch
             }
             $state->rememberIngredientName($model->name, $model->getKey(), $model->uuid);
         }
+    }
+
+    /**
+     * Lower-case the row's uuid and parent uuids. Postgres stores (and
+     * returns) uuids in lower case, so an upper-case id would miss its stored
+     * row and then collide with it on insert.
+     *
+     * @param  array{fks: array<string, string>}  $resource
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function normaliseIds(string $key, array $resource, array $row): array
+    {
+        $columns = ['id', ...array_keys($resource['fks'])];
+        if ($key === 'dinners') {
+            $columns[] = 'category'; // a custom category's uuid, or a built-in slug
+        }
+        foreach ($columns as $column) {
+            if (is_string($row[$column] ?? null) && Str::isUuid($row[$column])) {
+                $row[$column] = strtolower($row[$column]);
+            }
+        }
+
+        return $row;
     }
 
     /**
@@ -800,37 +866,75 @@ class ApplySyncBatch
     }
 
     /**
-     * Collect the household's rows above the client's cursor (tombstones
-     * included), plus any explicitly included uuids.
+     * The rows a pull returns: the household's rows above the client's cursor,
+     * tombstones included (a first sync: every live row with live parents),
+     * plus the rows the push must send back whatever their version.
      *
-     * @param  array{fks: array<string, string>, query: callable, serialize: callable}  $resource
-     * @return array<int, array<string, mixed>>
+     * A device far behind (cursor 0, or months offline) would otherwise get the
+     * household's whole history in one response, so a pull stops after about
+     * `handlelista.sync_page_rows` rows, walking (sync_version, id). It stops
+     * between versions, never inside one (a single version larger than a page
+     * goes out whole), and returns the last version it sent in full. Every app
+     * build stores the cursor it is given and pulls again, so it catches up
+     * over its next pulls without skipping anything; newer builds pull again
+     * at once when `has_more` is set. Rows sent above that cursor (the ones
+     * this push must return) simply come again.
+     *
+     * @param  array<string, array{fks: array<string, string>, query: callable(Household, bool): Builder, serialize: callable}>  $resources
+     * @return array{0: array<string, list<array<string, mixed>>>, 1: int|null} the rows, and — when not everything fit — the version they are complete through
      */
-    private function collectOutgoing(Household $household, string $key, array $resource, ?int $cursor, SyncBatchState $state): array
+    private function collectPull(Household $household, array $resources, ?int $cursor, SyncBatchState $state): array
     {
-        $include = $state->include[$key] ?? [];
+        $budget = max(1, (int) config('handlelista.sync_page_rows'));
+        $rows = [];
+        $versions = [];
+        foreach ($resources as $key => $resource) {
+            $rows[$key] = $this->pullQuery($household, $resource, $cursor)->limit($budget + 1)->get();
+            array_push($versions, ...$rows[$key]->map(fn (Model $model): int => (int) $model->getAttribute('sync_version'))->all());
+        }
+
+        $completeThrough = null;
+        if (count($versions) > $budget) {
+            sort($versions);
+            $firstLeftOut = $versions[$budget];
+            $completeThrough = $versions[0] < $firstLeftOut ? $firstLeftOut - 1 : $firstLeftOut;
+            foreach ($rows as $key => $models) {
+                // A table that filled its fetch may hold more rows at or below the cut.
+                $rows[$key] = $models->count() > $budget && (int) $models->last()->getAttribute('sync_version') <= $completeThrough
+                    ? $this->pullQuery($household, $resources[$key], $cursor)->where('sync_version', '<=', $completeThrough)->get()
+                    : $models->filter(fn (Model $model): bool => (int) $model->getAttribute('sync_version') <= $completeThrough)->values();
+            }
+        }
+
+        $outgoing = [];
+        foreach ($resources as $key => $resource) {
+            $models = $rows[$key];
+            $include = array_values(array_diff(array_unique($state->include[$key] ?? []), $models->pluck('uuid')->all()));
+            if ($include !== []) {
+                $models = $models->concat(($resource['query'])($household, false)->withTrashed()->whereIn('uuid', $include)->get());
+            }
+            $outgoing[$key] = $this->serializeModels($resource, $models, $state);
+        }
+
+        return [$outgoing, $completeThrough];
+    }
+
+    /**
+     * A pull's rows of one resource in (sync_version, id) order, on the
+     * `(household or parent, sync_version)` index.
+     *
+     * @param  array{query: callable(Household, bool): Builder}  $resource
+     */
+    private function pullQuery(Household $household, array $resource, ?int $cursor): Builder
+    {
         $query = ($resource['query'])($household, $cursor === null)->withTrashed();
-
         if ($cursor === null) {
-            $query->where(fn (Builder $q) => $q->whereNull('deleted_at')->orWhereIn('uuid', $include));
+            $query->whereNull('deleted_at');
         } else {
-            $query->where(fn (Builder $q) => $q->where('sync_version', '>', $cursor)->orWhereIn('uuid', $include));
+            $query->where('sync_version', '>', $cursor);
         }
 
-        $models = $query->orderBy('id')->get();
-        if ($models->isEmpty()) {
-            return [];
-        }
-
-        // Parent uuids come from the maps already loaded for the push, or one
-        // lookup of exactly the parent ids these rows reference.
-        foreach ($resource['fks'] as $column => $parentKey) {
-            $state->resolveUuids($parentKey, $models->pluck($column)->all());
-        }
-
-        return $models
-            ->map(fn (Model $model): array => $this->serializeRow($resource, $model, $state))
-            ->all();
+        return $query->orderBy('sync_version')->orderBy('id');
     }
 
     /**

@@ -9,6 +9,9 @@ use Spatie\LaravelData\Data;
 
 class DinnerInputData extends Data
 {
+    /** Ingredients a recipe can have. */
+    public const MAX_ITEMS = 200;
+
     /**
      * @param  array<int, DinnerItemInputData>  $items
      */
@@ -19,7 +22,8 @@ class DinnerInputData extends Data
         public int $defaultServings = 2,
         #[Max(5000)]
         public ?string $notes = null,
-        #[DataCollectionOf(DinnerItemInputData::class)]
+        /** At most MAX_ITEMS ingredients, well inside a sync batch. */
+        #[DataCollectionOf(DinnerItemInputData::class), Max(DinnerInputData::MAX_ITEMS)]
         public array $items = [],
         /** Built-in category slug or a household custom category UUID. */
         #[Max(36)]

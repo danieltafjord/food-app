@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Actions\Ai\RunWeekPlanning;
 use App\Actions\Notifications\RecordHouseholdActivity;
 use App\Actions\Sync\AllocateSyncVersion;
 use App\Auth\Grants\AppleSignInGrant;
@@ -16,12 +17,14 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Markdown;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Passport\Bridge\RefreshTokenRepository;
 use Laravel\Passport\Passport;
@@ -74,7 +77,13 @@ class AppServiceProvider extends ServiceProvider
     protected function configureRateLimiting(): void
     {
         RateLimiter::for('week-planning', fn (Request $request) => Limit::perMinute(6)
-            ->by('week-planning:'.$request->ip()));
+            ->by('week-planning:'.RunWeekPlanning::clientNetwork((string) $request->ip())));
+
+        // A first sync (no cursor, not a later page) locks the household and
+        // tidies every recipe; the app needs one per sign-in or household switch.
+        RateLimiter::for('first-sync', fn (Request $request) => $request->input('cursor') === null && $request->input('page') === null
+            ? [Limit::perMinute(6)->by('first-sync:'.$request->user()->id), Limit::perHour(60)->by('first-sync-hour:'.$request->user()->id)]
+            : Limit::none());
 
         RateLimiter::for('ai', fn (Request $request) => [
             Limit::perMinute(12)->by('ai-user:'.$request->user()->id),
@@ -91,6 +100,20 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('oauth-registration', fn (Request $request) => $request->isMethod('POST')
             ? Limit::perHour(10)->by('oauth-registration:'.$request->ip())
             : Limit::none());
+
+        // Invitations send email to any address, so every attempt counts
+        // (revoking one does not give the send back): per sender, per
+        // household, and per recipient across all households.
+        RateLimiter::for('invitations', function (Request $request): array {
+            $tooMany = fn (Request $request, array $headers) => response()->json(['message' => __('households.too_many_invitations')], 429, $headers);
+            $recipient = Str::lower(trim((string) (is_string($request->input('email')) ? $request->input('email') : '')));
+
+            return [
+                Limit::perHour(10)->by('invitations-user:'.$request->user()->id)->response($tooMany),
+                Limit::perDay(20)->by('invitations-household:'.$request->user()->current_household_id)->response($tooMany),
+                Limit::perDay(3)->by('invitations-email:'.$recipient)->response($tooMany),
+            ];
+        });
 
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)
             ->by($request->user()?->id ?: $request->ip()));
@@ -149,6 +172,10 @@ class AppServiceProvider extends ServiceProvider
     protected function configureDefaults(): void
     {
         Date::use(CarbonImmutable::class);
+
+        // Names people choose (households, inviters) go into emails; keep
+        // them from turning into Markdown links or HTML there.
+        Markdown::withSecuredEncoding();
 
         DB::prohibitDestructiveCommands(
             app()->isProduction(),

@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\DB;
 
 class UpdateMemberRole
 {
+    public function __construct(private RevokeInvitation $revokeInvitation) {}
+
     public function handle(Household $household, User $member, HouseholdRole $role): void
     {
         DB::transaction(function () use ($household, $member, $role): void {
@@ -16,10 +18,14 @@ class UpdateMemberRole
             Household::query()->lockForUpdate()->findOrFail($household->id);
 
             if ($role !== HouseholdRole::Owner && $household->isOwnedBy($member) && $household->ownerCount() <= 1) {
-                abort(409, 'The household must have at least one owner.');
+                abort(409, __('households.must_keep_owner'));
             }
 
             $household->members()->updateExistingPivot($member->id, ['role' => $role->value]);
+
+            if ($role !== HouseholdRole::Owner) {
+                $this->revokeInvitation->sentBy($household, $member);
+            }
         });
     }
 }

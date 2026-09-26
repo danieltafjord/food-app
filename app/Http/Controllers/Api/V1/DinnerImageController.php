@@ -16,8 +16,11 @@ class DinnerImageController extends ApiController
 {
     public function store(Request $request, StoreDinnerImage $store): JsonResponse
     {
+        // `dimensions` reads the size from the file header, before anything is
+        // decoded: GD holds 4 bytes a pixel, so a small, highly compressed
+        // 8000×8000 PNG would take 256 MB. The app sends at most 1600 px.
         $request->validate([
-            'image' => ['required', 'file', 'mimes:jpeg,png,webp', 'max:10240', 'dimensions:min_width=64,min_height=64,max_width=8000,max_height=8000'],
+            'image' => ['required', 'file', 'mimes:jpeg,png,webp', 'max:10240', 'dimensions:min_width=64,min_height=64,max_width=4096,max_height=4096'],
         ]);
         $image = $store->handle($request->file('image')->getContent(), $this->currentHousehold($request),
             $request->user(), DinnerImage::SOURCE_PHOTO);

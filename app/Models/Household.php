@@ -43,13 +43,15 @@ class Household extends Model
     }
 
     /**
-     * The users that belong to this household.
+     * The users that belong to this household. Removing one announces it to
+     * the household (see HouseholdMember).
      *
-     * @return BelongsToMany<User, $this>
+     * @return BelongsToMany<User, $this, HouseholdMember>
      */
     public function members(): BelongsToMany
     {
         return $this->belongsToMany(User::class)
+            ->using(HouseholdMember::class)
             ->withPivot('role')
             ->withTimestamps();
     }

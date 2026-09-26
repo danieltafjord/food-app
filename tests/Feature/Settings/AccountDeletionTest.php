@@ -87,17 +87,21 @@ it('keeps existing shared household owners without promoting other members', fun
         ->and($household->isOwnedBy($member))->toBeFalse();
 });
 
-it('erases authored shared content and emits scrubbed tombstones even for households the user has left', function () {
+it('anonymises authored shared content and stamps it for sync even for households the user has left', function () {
     $this->travelTo(now()->setMicrosecond(123456));
     [$remainingOwner, $household] = ownerWithHousehold();
     $user = User::factory()->create();
     $ingredient = Ingredient::factory()->for($household)->create();
-    $dinner = Dinner::factory()->for($household)->create(['created_by_user_id' => $user->id, 'notes' => 'Private notes']);
-    $item = DinnerItem::factory()->for($dinner)->for($ingredient)->create();
-    $plan = DinnerPlan::factory()->for($household)->create(['created_by_user_id' => $user->id]);
-    $entry = DinnerPlanEntry::factory()->for($plan)->for($dinner)->create(['notes' => 'Private entry']);
-    $list = ShoppingList::factory()->for($household)->for($plan)->create(['created_by_user_id' => $user->id]);
-    $listItem = ShoppingListItem::factory()->for($list)->for($ingredient)->create(['name' => 'Private item']);
+    $dinner = Dinner::factory()->for($household)->make(['created_by_user_id' => $user->id, 'name' => 'Pancakes', 'notes' => 'Private notes']);
+    $dinner->attributeContentTo($user->id)->save();
+    $plan = DinnerPlan::factory()->for($household)->make(['created_by_user_id' => $user->id, 'name' => 'Week 40']);
+    $plan->attributeContentTo($user->id)->save();
+    $entry = DinnerPlanEntry::factory()->for($plan)->for($dinner)->make(['notes' => 'Private entry']);
+    $entry->attributeContentTo($user->id)->save();
+    $list = ShoppingList::factory()->for($household)->for($plan)->make(['created_by_user_id' => $user->id, 'name' => 'Groceries']);
+    $list->attributeContentTo($user->id)->save();
+    $listItem = ShoppingListItem::factory()->for($list)->for($ingredient)->make(['name' => 'Milk']);
+    $listItem->attributeContentTo($user->id)->save();
     $retained = Dinner::factory()->for($household)->create(['created_by_user_id' => $remainingOwner->id]);
     $dinner->delete();
     app(AllocateSyncVersion::class)->forget();
@@ -105,19 +109,20 @@ it('erases authored shared content and emits scrubbed tombstones even for househ
 
     app(DeleteAccount::class)->handle($user);
 
-    foreach ([$dinner, $item, $plan, $entry, $list, $listItem] as $model) {
+    foreach ([$dinner, $plan, $entry, $list, $listItem] as $model) {
         $model->refresh();
-        expect($model->trashed())->toBeTrue()->and($model->sync_version)->toBeGreaterThan($cursor);
-        foreach (['deleted_at', 'updated_at', 'synced_at'] as $timestamp) {
-            expect($model->{$timestamp}->format('u'))->toBe('123456');
-        }
+        expect($model->sync_version)->toBeGreaterThan($cursor)
+            ->and($model->content_authors)->toBeNull()
+            ->and($model->created_by_user_id)->toBeNull()
+            ->and($model->synced_at->format('u'))->toBe('123456');
     }
-    expect($dinner->name)->toBe('')->and($dinner->notes)->toBeNull()
-        ->and($dinner->created_by_user_id)->toBeNull()
-        ->and($item->quantity)->toBeNull()->and($item->unit)->toBeNull()
-        ->and($plan->name)->toBe('')->and($plan->start_date)->toBeNull()
-        ->and($entry->notes)->toBeNull()
-        ->and($list->name)->toBe('')->and($listItem->name)->toBeNull();
+    expect($dinner->trashed())->toBeTrue()
+        ->and($plan->trashed() || $list->trashed() || $listItem->trashed())->toBeFalse()
+        ->and($dinner->name)->toBe('Pancakes')->and($dinner->notes)->toBeNull()
+        ->and($plan->name)->toBe('Week 40')
+        ->and($entry->notes)->toBeNull()->and($entry->erasure_version)->toBeGreaterThan($cursor)
+        ->and($list->name)->toBe('Groceries')->and($list->dinner_plan_id)->toBe($plan->id)
+        ->and($listItem->name)->toBe('Milk')->and($listItem->erasure_version)->toBe(0);
     expect($retained->fresh()->trashed())->toBeFalse();
     $this->assertModelExists($ingredient);
 });

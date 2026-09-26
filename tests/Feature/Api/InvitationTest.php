@@ -2,6 +2,7 @@
 
 use App\Actions\Households\AcceptInvitation;
 use App\Actions\Households\DeclineInvitation;
+use App\Enums\AppLocale;
 use App\Enums\HouseholdRole;
 use App\Models\Household;
 use App\Models\HouseholdInvitation;
@@ -74,12 +75,119 @@ it('lets the invited user accept and join', function () {
         ->and($invitation->fresh()->accepted_at)->not->toBeNull();
 });
 
-it('forbids accepting an invitation addressed to a different email', function () {
-    $invitation = HouseholdInvitation::factory()->for($this->household)->create(['email' => 'someone@else.com']);
+it('lets whoever holds the token respond, even from a different email address', function (string $response) {
+    // Sign in with Apple's "Hide My Email" gives the invitee a relay address.
+    $invitee = User::factory()->create(['email' => 'x7k2p9@privaterelay.appleid.com']);
+    $invitation = HouseholdInvitation::factory()->for($this->household)->create(['email' => 'partner@example.com']);
 
-    Passport::actingAs(User::factory()->create(['email' => 'other@example.com']));
-    $this->postJson("/api/v1/invitations/{$invitation->token}/accept")->assertForbidden();
+    Passport::actingAs($invitee);
+    $this->postJson("/api/v1/invitations/{$invitation->token}/{$response}")->assertSuccessful();
+
+    expect($this->household->hasMember($invitee))->toBe($response === 'accept')
+        ->and($invitation->fresh()->isPending())->toBeFalse();
+    $this->postJson("/api/v1/invitations/{$invitation->token}/accept")->assertConflict();
+})->with(['accept', 'decline']);
+
+it('refuses an invitation once its sender no longer owns the household', function (?HouseholdRole $senderRole) {
+    $sender = User::factory()->create();
+    $this->household->members()->attach($sender, ['role' => HouseholdRole::Owner->value]);
+    $invitation = HouseholdInvitation::factory()->for($this->household)->create([
+        'invited_by_user_id' => $sender->id,
+        'role' => HouseholdRole::Owner,
+    ]);
+    // Changed behind the actions' backs, which would also revoke the invitation.
+    $senderRole === null
+        ? $this->household->members()->detach($sender)
+        : $this->household->members()->updateExistingPivot($sender->id, ['role' => $senderRole->value]);
+    $invitee = User::factory()->create();
+
+    Passport::actingAs($invitee);
+    $this->postJson("/api/v1/invitations/{$invitation->token}/accept")->assertConflict();
+
+    expect($this->household->hasMember($invitee))->toBeFalse();
+})->with(['removed' => null, 'demoted' => HouseholdRole::Member]);
+
+it('revokes the pending invitations of an owner who is removed or demoted', function (string $change) {
+    $sender = User::factory()->create(['current_household_id' => $this->household->id]);
+    $this->household->members()->attach($sender, ['role' => HouseholdRole::Owner->value]);
+    $pending = HouseholdInvitation::factory()->for($this->household)->create(['invited_by_user_id' => $sender->id]);
+    $accepted = HouseholdInvitation::factory()->for($this->household)->accepted()->create(['invited_by_user_id' => $sender->id]);
+    $fromOwner = HouseholdInvitation::factory()->for($this->household)->create(['invited_by_user_id' => $this->owner->id]);
+
+    Passport::actingAs($this->owner);
+    $change === 'remove'
+        ? $this->deleteJson("/api/v1/household/members/{$sender->id}")->assertNoContent()
+        : $this->patchJson("/api/v1/household/members/{$sender->id}", ['role' => 'member'])->assertNoContent();
+
+    $this->assertModelMissing($pending);
+    $this->assertModelExists($accepted);
+    $this->assertModelExists($fromOwner);
+})->with(['remove', 'demote']);
+
+it('requires a verified email to send invitations', function () {
+    $this->owner->forceFill(['email_verified_at' => null])->save();
+    Passport::actingAs($this->owner);
+
+    $this->withHeader('Accept-Language', 'nb')
+        ->postJson('/api/v1/household/invitations', ['email' => 'partner@example.com'])
+        ->assertForbidden()
+        ->assertJsonPath('message', 'Bekreft e-postadressen din før du inviterer noen til husstanden.');
+
+    Notification::assertNothingSent();
 });
+
+it('limits invitations to one address across households, even when they are revoked', function () {
+    [$otherOwner] = ownerWithHousehold();
+
+    Passport::actingAs($this->owner);
+    foreach (range(1, 2) as $attempt) {
+        $id = $this->postJson('/api/v1/household/invitations', ['email' => 'Target@example.com'])->assertSuccessful()->json('data.id');
+        $this->deleteJson("/api/v1/household/invitations/{$id}")->assertNoContent();
+    }
+    Passport::actingAs($otherOwner);
+    $this->postJson('/api/v1/household/invitations', ['email' => 'target@example.com'])->assertSuccessful();
+    $this->withHeader('Accept-Language', 'en')
+        ->postJson('/api/v1/household/invitations', ['email' => 'target@example.com'])
+        ->assertTooManyRequests()
+        ->assertJsonPath('message', 'Too many invitations have been sent. Please try again later.');
+
+    $this->postJson('/api/v1/household/invitations', ['email' => 'someone-else@example.com'])->assertSuccessful();
+    Notification::assertSentOnDemandTimes(HouseholdInvitationNotification::class, 4);
+});
+
+it('limits how many invitations one person sends in an hour', function () {
+    Passport::actingAs($this->owner);
+
+    foreach (range(1, 10) as $number) {
+        $this->postJson('/api/v1/household/invitations', ['email' => "person{$number}@example.com"])->assertSuccessful();
+    }
+
+    $this->postJson('/api/v1/household/invitations', ['email' => 'person11@example.com'])->assertTooManyRequests();
+    $this->travel(61)->minutes();
+    $this->postJson('/api/v1/household/invitations', ['email' => 'person11@example.com'])->assertSuccessful();
+});
+
+it('writes the invitation email in the inviter\'s language with a fixed subject', function (AppLocale $locale, string $subject, string $intro) {
+    $this->owner->update(['name' => 'Kari', 'locale' => $locale]);
+    $this->household->update(['name' => 'Click [here](https://evil.example)']);
+    Passport::actingAs($this->owner);
+
+    $this->postJson('/api/v1/household/invitations', ['email' => 'partner@example.com'])->assertSuccessful();
+
+    Notification::assertSentOnDemand(HouseholdInvitationNotification::class, function (HouseholdInvitationNotification $notification, array $channels, object $notifiable) use ($subject, $intro): bool {
+        app()->setLocale($notification->locale);
+        $mail = $notification->toMail($notifiable);
+        $html = (string) $mail->render();
+
+        return $mail->subject === $subject
+            && str_contains($mail->introLines[0], $intro)
+            && ! str_contains($html, 'href="https://evil.example"')
+            && ! str_contains($html, 'Food App');
+    });
+})->with([
+    'english' => [AppLocale::English, 'You are invited to a household on Handlelista', 'Kari has invited you to join the household'],
+    'norwegian' => [AppLocale::Norwegian, 'Du er invitert til en husstand i Handlelista', 'Kari har invitert deg til husstanden'],
+]);
 
 it('requires a verified email before responding to an invitation', function (string $response) {
     $invitee = User::factory()->unverified()->create(['email' => 'partner@example.com']);

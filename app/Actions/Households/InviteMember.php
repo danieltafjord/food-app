@@ -22,7 +22,7 @@ class InviteMember
 
         if ($household->members()->where('users.email', $email)->exists()) {
             throw ValidationException::withMessages([
-                'email' => 'This person is already a member of the household.',
+                'email' => __('households.already_member'),
             ]);
         }
 
@@ -35,7 +35,7 @@ class InviteMember
 
         if ($alreadyInvited) {
             throw ValidationException::withMessages([
-                'email' => 'An invitation has already been sent to this email.',
+                'email' => __('households.already_invited'),
             ]);
         }
 
@@ -48,7 +48,7 @@ class InviteMember
         ]);
 
         Notification::route('mail', $email)
-            ->notify(new HouseholdInvitationNotification($invitation));
+            ->notify((new HouseholdInvitationNotification($invitation))->locale($inviter->locale->translationLocale()));
 
         return $invitation;
     }

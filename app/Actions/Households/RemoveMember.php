@@ -11,6 +11,8 @@ use Laravel\Passport\Passport;
 
 class RemoveMember
 {
+    public function __construct(private RevokeInvitation $revokeInvitation) {}
+
     /**
      * Remove a member from the household (also used when a member leaves).
      */
@@ -22,10 +24,11 @@ class RemoveMember
             Household::query()->lockForUpdate()->findOrFail($household->id);
 
             if ($household->isOwnedBy($member) && $household->ownerCount() <= 1) {
-                abort(409, 'The household must have at least one owner.');
+                abort(409, __('households.must_keep_owner'));
             }
 
             $household->members()->detach($member->id);
+            $this->revokeInvitation->sentBy($household, $member);
 
             // API tokens pinned to this household are useless to a non-member.
             Passport::token()->newQuery()

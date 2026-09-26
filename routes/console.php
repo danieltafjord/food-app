@@ -6,6 +6,7 @@ use App\Models\AiRequest;
 use App\Models\ApiRequest;
 use App\Models\HouseholdActivity;
 use App\Models\HouseholdInvitation;
+use App\Models\PushToken;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -50,7 +51,7 @@ Artisan::command('notifications:household-activity', function (SendHouseholdActi
 Schedule::command('ai:prune-usage')->dailyAt('02:00')->timezone('UTC')->withoutOverlapping();
 Schedule::command('ai:prune-request-bodies')->dailyAt('02:10')->timezone('UTC')->withoutOverlapping();
 Schedule::command('dinner-images:prune')->dailyAt('02:30')->timezone('UTC')->withoutOverlapping();
-Schedule::command('model:prune', ['--model' => [ApiRequest::class, HouseholdInvitation::class, HouseholdActivity::class]])->dailyAt('02:20')->timezone('UTC')->withoutOverlapping();
+Schedule::command('model:prune', ['--model' => [ApiRequest::class, HouseholdInvitation::class, HouseholdActivity::class, PushToken::class]])->dailyAt('02:20')->timezone('UTC')->withoutOverlapping();
 Schedule::command('passport:purge')->dailyAt('02:40')->timezone('UTC')->withoutOverlapping();
 Schedule::command('queue:prune-failed', ['--hours' => 24 * 7])->dailyAt('02:50')->timezone('UTC')->withoutOverlapping();
 Schedule::command('cache:prune-expired')->dailyAt('03:00')->timezone('UTC')->withoutOverlapping();

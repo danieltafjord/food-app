@@ -38,6 +38,17 @@ it('rejects items whose ingredient belongs to another household', function () {
     ])->assertUnprocessable();
 });
 
+it('caps how many ingredients a recipe can have', function () {
+    $ingredient = Ingredient::factory()->for($this->household)->create();
+    $dinner = Dinner::factory()->for($this->household)->create();
+    $items = array_fill(0, 201, ['ingredient_id' => $ingredient->id, 'quantity' => 1, 'unit' => 'g']);
+
+    $this->postJson('/api/v1/dinners', ['name' => 'Everything', 'default_servings' => 2, 'items' => $items])
+        ->assertUnprocessable()->assertJsonValidationErrors('items');
+    $this->patchJson("/api/v1/dinners/{$dinner->id}", ['items' => $items])
+        ->assertUnprocessable()->assertJsonValidationErrors('items');
+});
+
 it('lists and shows dinners with their items', function () {
     $dinner = Dinner::factory()->for($this->household)->create();
     $ingredient = Ingredient::factory()->for($this->household)->create();

@@ -77,6 +77,8 @@ it('rejects files that are not usable images', function (UploadedFile $file) {
 })->with([
     'text' => fn () => UploadedFile::fake()->create('notes.txt', 1, 'text/plain'),
     'tiny' => fn () => UploadedFile::fake()->createWithContent('tiny.jpg', jpegOf(20, 20)),
+    // Refused from the header: decoded, a large image takes 4 bytes a pixel.
+    'too many pixels' => fn () => UploadedFile::fake()->createWithContent('huge.jpg', jpegOf(4097, 64)),
 ]);
 
 it('generates an AI picture through OpenRouter and records its cost', function () {

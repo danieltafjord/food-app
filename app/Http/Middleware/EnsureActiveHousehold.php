@@ -12,6 +12,9 @@ class EnsureActiveHousehold
      * Resolve the user's active household and reject the request if they have
      * none selected or are no longer a member of it. The validated household
      * is stashed on the request for controllers to read.
+     *
+     * The 409 carries `code: no_active_household` (like sync's
+     * `household_mismatch`) so the app can tell it from other conflicts.
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -29,7 +32,10 @@ class EnsureActiveHousehold
             ->first();
 
         if (! $household || ($locksHousehold && ! $household->hasMember($user))) {
-            abort(Response::HTTP_CONFLICT, 'No active household selected.');
+            return response()->json([
+                'message' => 'No active household selected.',
+                'code' => 'no_active_household',
+            ], Response::HTTP_CONFLICT);
         }
 
         $request->attributes->set('current_household', $household);

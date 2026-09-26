@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Auth\VerifyAppleIdentityToken;
 use App\Auth\Grants\AppleSignInGrant;
 use App\Enums\SocialProvider;
 use App\Models\SocialAccount;
@@ -46,6 +47,7 @@ it('creates a passwordless account for a new Apple user and signs them in', func
 
     $user = User::query()->where('email', 'apple-user@example.com')->sole();
     expect($user->name)->toBe('Kari Nordmann')
+        ->and($user->needs_name)->toBeFalse()
         ->and($user->hasVerifiedEmail())->toBeTrue()
         ->and($user->hasPassword())->toBeFalse()
         ->and($credentials['refresh_token'])->toBeString();
@@ -124,6 +126,63 @@ it('rejects an identity token that is not valid for this sign-in', function (arr
     'another issuer' => [['iss' => 'https://accounts.google.com'], 'raw-nonce'],
     'expired' => [['exp' => time() - 3600, 'iat' => time() - 7200], 'raw-nonce'],
 ]);
+
+it('gives a Hide My Email sign-up without a name a neutral one and asks for a real one', function (string $acceptLanguage, string $name) {
+    Http::preventStrayRequests();
+
+    $credentials = $this->withHeader('Accept-Language', $acceptLanguage)->postJson('/oauth/token', appleTokenRequest(appleSignInClient(), [
+        'identity_token' => appleIdentityToken(['email' => 'x7k2p9qd4m@privaterelay.appleid.com']),
+    ]))->assertOk()->json();
+
+    expect(User::query()->sole())->name->toBe($name)->needs_name->toBeTrue();
+    $this->withToken($credentials['access_token'])->getJson('/api/v1/me')->assertJsonPath('data.needs_name', true);
+})->with([
+    'english' => ['en', 'Handlelista user'],
+    'norwegian' => ['nb', 'Handlelista-bruker'],
+]);
+
+it('names a sign-up without a name after their email address until they choose one', function () {
+    Http::preventStrayRequests();
+
+    $this->postJson('/oauth/token', appleTokenRequest(appleSignInClient()))->assertOk();
+
+    expect(User::query()->sole())->name->toBe('apple-user')->needs_name->toBeTrue();
+});
+
+it('explains a failed sign-in in the app\'s language', function () {
+    Http::preventStrayRequests();
+
+    $this->withHeader('Accept-Language', 'nb')->postJson('/oauth/token', appleTokenRequest(appleSignInClient(), ['nonce' => 'other-nonce']))
+        ->assertStatus(400)
+        ->assertJsonPath('hint', 'Vi kunne ikke bekrefte innloggingen med Apple. Prøv igjen.');
+});
+
+it('allows a minute of clock difference with Apple', function (array $claims) {
+    Http::preventStrayRequests();
+
+    $this->postJson('/oauth/token', appleTokenRequest(appleSignInClient(), [
+        'identity_token' => appleIdentityToken($claims),
+    ]))->assertOk();
+})->with([
+    'issued slightly in the future' => [['iat' => time() + 30]],
+    'expired moments ago' => [['iat' => time() - 600, 'exp' => time() - 30]],
+]);
+
+it('refetches Apple\'s keys for an unknown key id at most once a minute', function () {
+    Http::preventStrayRequests();
+    appleIdentityToken();
+    $unknownKey = JWT::urlsafeB64Encode(json_encode(['alg' => 'RS256', 'kid' => 'made-up'])).'.e30.c2ln';
+    $attempt = fn () => rescue(fn () => app(VerifyAppleIdentityToken::class)->handle($unknownKey, 'raw-nonce'), report: false);
+
+    $attempt();
+    $attempt();
+    $attempt();
+    Http::assertSentCount(2);
+
+    $this->travel(61)->seconds();
+    $attempt();
+    Http::assertSentCount(3);
+});
 
 it('rejects a token that Apple did not sign', function () {
     Http::preventStrayRequests();

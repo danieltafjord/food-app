@@ -53,7 +53,7 @@ it('requires a valid Apple sign-in to delete', function () {
         'nonce' => 'not-the-nonce',
     ])->assertUnprocessable()->assertJsonValidationErrors('identity_token');
 
-    $this->deleteJson('/api/v1/me')->assertUnprocessable()->assertJsonValidationErrors(['identity_token', 'nonce']);
+    $this->deleteJson('/api/v1/me', ['identity_token' => 'token'])->assertUnprocessable()->assertJsonValidationErrors('nonce');
 
     $this->assertModelExists($account->user);
 });

@@ -2,6 +2,7 @@
 
 use App\Actions\Notifications\SendHouseholdActivityNotifications;
 use App\Enums\HouseholdRole;
+use App\Jobs\CheckExpoPushReceipts;
 use App\Jobs\SendHouseholdNotifications;
 use App\Models\Dinner;
 use App\Models\DinnerPlan;
@@ -14,11 +15,15 @@ use App\Models\ShoppingListItem;
 use App\Models\User;
 use App\Notifications\Channels\ExpoPushChannel;
 use App\Notifications\HouseholdActivityNotification;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
+use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 
 beforeEach(function () {
@@ -237,6 +242,19 @@ it('drops activity that was never sent in time', function () {
         ->and(HouseholdActivity::query()->whereNull('notified_at')->count())->toBe(0);
 });
 
+it('announces the next shopping trip after dropping ticks that were never sent', function () {
+    $items = collect(['Milk', 'Eggs', 'Bread'])->map(fn (string $name) => ShoppingListItem::factory()->for($this->list)->create(['name' => $name, 'ingredient_id' => null]));
+    HouseholdActivity::query()->delete();
+
+    $items[0]->update(['is_checked' => true]);
+    $this->travel(SendHouseholdActivityNotifications::STALE_MINUTES + 1)->minutes();
+    expect(sendHouseholdActivity())->toBe(0);
+
+    $items[1]->update(['is_checked' => true]);
+    expect(sendHouseholdActivity())->toBe(1);
+    Notification::assertSentTo($this->ola, HouseholdActivityNotification::class, fn (HouseholdActivityNotification $notification): bool => $notification->body === 'Kari started shopping. 1 item left.');
+});
+
 it('registers an install, moves it to whoever signs in there, and forgets it again', function () {
     $token = 'ExponentPushToken[abc123]';
     $this->putJson('/api/v1/me/push-token', ['token' => $token, 'platform' => 'ios', 'timezone' => 'Europe/Oslo'])->assertNoContent();
@@ -302,4 +320,100 @@ it('sends through Expo and forgets installs Expo no longer knows', function () {
         && count($request->data()) === 2);
     expect(PushToken::query()->whereKey($gone->id)->exists())->toBeFalse()
         ->and($user->pushTokens()->count())->toBe(1);
+});
+
+it('checks Expo receipts later, forgets uninstalled apps and reports failures loudly', function () {
+    $this->freezeTime();
+    Sleep::fake();
+    Log::spy();
+    $attempts = 0;
+    Http::fake([
+        'exp.host/--/api/v2/push/send' => function (Request $request) use (&$attempts) {
+            // Expo is briefly unavailable; the send is retried.
+            if (++$attempts === 1) {
+                return Http::response([], 503);
+            }
+
+            return Http::response(['data' => array_map(fn (array $message): array => str_contains($message['to'], 'big')
+                ? ['status' => 'error', 'message' => 'Too big', 'details' => ['error' => 'MessageTooBig']]
+                : ['status' => 'ok', 'id' => 'ticket-'.$message['to']], $request->data())]);
+        },
+        'exp.host/--/api/v2/push/getReceipts' => Http::response(['data' => [
+            'ticket-ExponentPushToken[live]' => ['status' => 'ok'],
+            'ticket-ExponentPushToken[removed]' => ['status' => 'error', 'message' => 'Gone', 'details' => ['error' => 'DeviceNotRegistered']],
+            'ticket-ExponentPushToken[bad-credentials]' => ['status' => 'error', 'message' => 'No APNs key', 'details' => ['error' => 'InvalidCredentials']],
+        ]]),
+    ]);
+    $user = User::factory()->create();
+    foreach (['live', 'removed', 'bad-credentials', 'big'] as $name) {
+        PushToken::factory()->for($user)->create(['token' => "ExponentPushToken[{$name}]"]);
+    }
+
+    app(ExpoPushChannel::class)->send($user, new HouseholdActivityNotification('Groceries', 'Kari added Milk', ['url' => '/'], 'list.x'));
+
+    expect($attempts)->toBe(2)
+        ->and($user->pushTokens()->count())->toBe(4);
+    Log::shouldHaveReceived('error')->with('Expo push failed: MessageTooBig.', Mockery::any())->once();
+    Queue::assertPushed(CheckExpoPushReceipts::class, fn (CheckExpoPushReceipts $job): bool => count($job->tickets) === 3
+        && $job->delay->equalTo(now()->addMinutes(ExpoPushChannel::RECEIPT_DELAY_MINUTES)));
+
+    $this->travel(ExpoPushChannel::RECEIPT_DELAY_MINUTES)->minutes();
+    Queue::pushed(CheckExpoPushReceipts::class)->first()->handle();
+
+    expect($user->pushTokens()->orderBy('token')->pluck('token')->all())
+        ->toBe(['ExponentPushToken[bad-credentials]', 'ExponentPushToken[big]', 'ExponentPushToken[live]']);
+    Log::shouldHaveReceived('error')->with('Expo push failed: InvalidCredentials.', Mockery::any())->once();
+});
+
+it('stops pushing to installs whose session ended without telling us, and prunes them', function () {
+    Http::fake(['exp.host/*' => fn (Request $request) => Http::response(['data' => array_map(fn (): array => ['status' => 'ok', 'id' => (string) Str::uuid()], $request->data())])]);
+    Artisan::call('passport:client', ['--personal' => true, '--name' => 'Test Personal Access Client', '--no-interaction' => true]);
+    $user = User::factory()->create();
+    $live = $user->createToken('Phone')->getToken();
+    $revoked = $user->createToken('Old phone')->getToken();
+    $revoked->revoke();
+    $longAgo = now()->subDays(PushToken::SESSION_GRACE_DAYS + 1);
+    $current = PushToken::factory()->for($user)->create(['token' => 'ExponentPushToken[current]', 'access_token_id' => $live->id, 'updated_at' => $longAgo]);
+    PushToken::factory()->for($user)->create(['token' => 'ExponentPushToken[signed-out]', 'access_token_id' => $revoked->id, 'updated_at' => $longAgo]);
+    PushToken::factory()->for($user)->create(['token' => 'ExponentPushToken[purged]', 'access_token_id' => 'no-such-token', 'updated_at' => $longAgo]);
+    // Just registered: its session may have been refreshed since; wait for it to register again.
+    $waiting = PushToken::factory()->for($user)->create(['token' => 'ExponentPushToken[waiting]', 'access_token_id' => $revoked->id]);
+
+    app(ExpoPushChannel::class)->send($user, new HouseholdActivityNotification('Groceries', 'Kari added Milk', ['url' => '/']));
+
+    Http::assertSent(fn ($request): bool => collect($request->data())->pluck('to')->sort()->values()->all() === ['ExponentPushToken[current]', 'ExponentPushToken[waiting]']);
+    Artisan::call('model:prune', ['--model' => [PushToken::class]]);
+    expect($user->pushTokens()->orderBy('id')->pluck('id')->all())->toBe([$current->id, $waiting->id]);
+});
+
+it('keeps an install on its session when the app refreshes its token, so signing out still silences it', function () {
+    $user = User::factory()->create();
+    $client = app(ClientRepository::class)->createAuthorizationCodeGrantClient(
+        name: 'Mobile', redirectUris: ['foodapp://oauth/callback'], confidential: false,
+    );
+    $client->forceFill(['trusted' => true])->save();
+    $verifier = str_repeat('a', 64);
+    $authorization = $this->actingAs($user, 'web')->get('/oauth/authorize?'.http_build_query([
+        'response_type' => 'code', 'client_id' => $client->id, 'redirect_uri' => 'foodapp://oauth/callback',
+        'code_challenge' => rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '='),
+        'code_challenge_method' => 'S256', 'state' => 'push-test',
+    ]))->assertRedirect();
+    parse_str(parse_url($authorization->headers->get('Location'), PHP_URL_QUERY), $query);
+    $credentials = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code', 'client_id' => $client->id,
+        'redirect_uri' => 'foodapp://oauth/callback', 'code' => $query['code'], 'code_verifier' => $verifier,
+    ])->assertSuccessful()->json();
+    app('auth')->forgetGuards();
+    $this->withToken($credentials['access_token'])->putJson('/api/v1/me/push-token', ['token' => 'ExponentPushToken[phone]', 'platform' => 'ios'])->assertNoContent();
+
+    $refreshed = $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token', 'client_id' => $client->id, 'refresh_token' => $credentials['refresh_token'],
+    ])->assertSuccessful()->json();
+
+    $session = $user->tokens()->where('revoked', false)->sole();
+    expect(PushToken::query()->where('token', 'ExponentPushToken[phone]')->value('access_token_id'))->toBe($session->id);
+
+    app('auth')->forgetGuards();
+    $this->withToken($refreshed['access_token'])->postJson('/api/v1/auth/logout')->assertSuccessful();
+    expect(PushToken::query()->where('token', 'ExponentPushToken[phone]')->exists())->toBeFalse();
 });

@@ -28,6 +28,14 @@ use Laravel\Passport\Passport;
 
 class DeleteAccount
 {
+    /**
+     * Free text that is personal to whoever wrote it, cleared even from rows
+     * the rest of the household keeps.
+     *
+     * @var list<string>
+     */
+    private const PERSONAL_FIELDS = ['notes'];
+
     /** @var list<class-string<Model>> */
     private const CONTENT_MODELS = [HouseholdDinnerCategory::class, Ingredient::class, Dinner::class, DinnerItem::class, DinnerPlan::class, DinnerPlanEntry::class, ShoppingList::class, ShoppingListItem::class];
 
@@ -68,17 +76,14 @@ class DeleteAccount
                     ]);
                 }
 
-                $this->eraseContributions($household, $user);
+                $this->anonymise($household, $user);
             }
 
+            // Every row left belongs to a household that other people still
+            // use (households the user was last in are gone). Their shopping
+            // list and recipes keep working: only the user's name comes off.
             foreach (self::CONTENT_MODELS as $model) {
-                $this->contributions($model, $user)->eachById(function (Model $resource) use ($user): void {
-                    if ($resource->created_by_user_id === $user->id) {
-                        $this->eraseResource($resource);
-                    } else {
-                        $this->eraseContributions($resource, $user);
-                    }
-                });
+                $this->contributions($model, $user)->eachById(fn (Model $resource) => $this->anonymise($resource, $user));
             }
 
             $clientIds = $user->oauthApps()->pluck('id');
@@ -133,63 +138,44 @@ class DeleteAccount
         }
     }
 
-    private function eraseContributions(Model $resource, User $user): void
+    /**
+     * Detach the user from a row others still use: drop them as its creator
+     * and author, and clear the personal free text they wrote (notes). Names,
+     * amounts and links stay, so other members lose nothing they rely on.
+     * A cleared field bumps the erasure version, so offline copies cannot
+     * restore the text; every change is stamped for sync.
+     */
+    private function anonymise(Model $resource, User $user): void
     {
         $authors = $resource->content_authors ?? [];
-        $fields = $authors['user_'.$user->id] ?? [];
-        if ($fields === []) {
-            return;
-        }
-        $attributes = array_intersect_key($resource->contentErasureDefaults(), array_flip($fields));
+        $cleared = array_values(array_intersect($authors['user_'.$user->id] ?? [], self::PERSONAL_FIELDS));
+        unset($authors['user_'.$user->id]);
+        // Someone who edited a cleared field after the user may have kept their text.
         foreach ($authors as $authorId => $authoredFields) {
-            $authors[$authorId] = array_values(array_diff($authoredFields, $fields));
+            $authors[$authorId] = array_values(array_diff($authoredFields, $cleared));
             if ($authors[$authorId] === []) {
                 unset($authors[$authorId]);
             }
         }
-        if ($resource instanceof ShoppingListItem && in_array('name', $fields, true) && $resource->ingredient_id === null) {
-            $attributes['name'] = 'Item';
+
+        $attributes = array_intersect_key($resource->contentErasureDefaults(), array_flip($cleared));
+        $attributes['content_authors'] = $authors ?: null;
+        if (! $resource instanceof Household && $resource->created_by_user_id === $user->id) {
+            $attributes['created_by_user_id'] = null;
         }
-        $resource->forceFill($attributes + ['content_authors' => $authors ?: null])->withoutContentAttribution();
+        $resource->forceFill($attributes)->withoutContentAttribution();
+
         if ($resource instanceof Household) {
-            $resource->erasure_version = $resource->erasure_version + 1;
+            if ($cleared !== []) {
+                $resource->erasure_version = $resource->erasure_version + 1;
+            }
         } else {
             $version = $this->allocateVersion->handle($resource->syncHouseholdId());
-            $resource->forceFill(['erasure_version' => $version])->stampSync($version);
+            if ($cleared !== []) {
+                $resource->erasure_version = $version;
+            }
+            $resource->stampSync($version);
         }
         $resource->save();
-    }
-
-    private function eraseResource(Model $resource): void
-    {
-        if ($resource instanceof Dinner || $resource instanceof ShoppingList) {
-            $resource->items()->withTrashed()->eachById(fn (Model $child) => $this->eraseResource($child));
-        }
-        if ($resource instanceof Dinner || $resource instanceof DinnerPlan) {
-            $entries = $resource instanceof Dinner ? $resource->planEntries() : $resource->entries();
-            $entries->withTrashed()->eachById(fn (Model $child) => $this->eraseResource($child));
-        }
-        if ($resource instanceof Ingredient) {
-            foreach ([$resource->dinnerItems(), $resource->shoppingListItems()] as $items) {
-                $items->withTrashed()->eachById(fn (Model $child) => $this->eraseResource($child));
-            }
-        }
-        $attributes = $resource->contentErasureDefaults();
-        if ($resource instanceof Dinner || $resource instanceof DinnerPlan || $resource instanceof ShoppingList) {
-            $attributes['name'] = '';
-        }
-        if ($resource instanceof ShoppingList) {
-            $attributes['dinner_plan_id'] = null;
-        }
-        if ($resource instanceof ShoppingListItem) {
-            $attributes['ingredient_id'] = null;
-        }
-        $version = $this->allocateVersion->handle($resource->syncHouseholdId());
-        $resource->forceFill($attributes + [
-            'created_by_user_id' => null,
-            'content_authors' => null,
-            'erasure_version' => $version,
-        ])->withoutContentAttribution()->stampSync($version)->save();
-        $resource->delete();
     }
 }

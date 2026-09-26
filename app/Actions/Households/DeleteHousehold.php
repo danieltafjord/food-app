@@ -26,6 +26,11 @@ class DeleteHousehold
     public function handle(Household $household): void
     {
         DB::transaction(function () use ($household): void {
+            // Sync batches write under this lock (see AllocateSyncVersion): one
+            // that adds a recipe mid-delete would trip the RESTRICT on
+            // dinner_items.ingredient_id.
+            Household::query()->lockForUpdate()->findOrFail($household->id);
+
             ShoppingListItem::withTrashed()
                 ->whereIn('shopping_list_id', $household->shoppingLists()->withTrashed()->select('id'))
                 ->forceDelete();

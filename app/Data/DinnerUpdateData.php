@@ -18,7 +18,8 @@ class DinnerUpdateData extends Data
         public int|Optional $defaultServings = new Optional,
         #[Max(5000)]
         public string|null|Optional $notes = new Optional,
-        #[DataCollectionOf(DinnerItemInputData::class)]
+        /** At most MAX_ITEMS ingredients, well inside a sync batch. */
+        #[DataCollectionOf(DinnerItemInputData::class), Max(DinnerInputData::MAX_ITEMS)]
         public array|Optional $items = new Optional,
         /** Built-in category slug or a household custom category UUID. */
         #[Max(36)]

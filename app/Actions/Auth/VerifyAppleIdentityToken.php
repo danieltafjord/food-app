@@ -17,6 +17,11 @@ class VerifyAppleIdentityToken
 
     private const string KEYS_CACHE_KEY = 'apple-sign-in:keys';
 
+    private const string REFETCH_COOLDOWN_KEY = 'apple-sign-in:keys-refetched';
+
+    /** Seconds of clock skew allowed between Apple and this server. */
+    private const int LEEWAY_SECONDS = 60;
+
     /**
      * Check an identity token from Sign in with Apple and return who it is for.
      *
@@ -31,7 +36,7 @@ class VerifyAppleIdentityToken
     public function handle(string $identityToken, string $nonce): array
     {
         try {
-            $claims = JWT::decode($identityToken, JWK::parseKeySet($this->keysFor($identityToken), 'RS256'));
+            $claims = $this->decode($identityToken);
         } catch (Throwable) {
             throw $this->invalid();
         }
@@ -57,8 +62,25 @@ class VerifyAppleIdentityToken
     }
 
     /**
+     * firebase/php-jwt reads its leeway from a static property; it is set only
+     * for this decode so other JWT checks keep their own.
+     */
+    private function decode(string $identityToken): object
+    {
+        $previousLeeway = JWT::$leeway;
+        JWT::$leeway = self::LEEWAY_SECONDS;
+
+        try {
+            return JWT::decode($identityToken, JWK::parseKeySet($this->keysFor($identityToken), 'RS256'));
+        } finally {
+            JWT::$leeway = $previousLeeway;
+        }
+    }
+
+    /**
      * Apple's signing keys, cached for a day. A token signed with a key the
-     * cache has not seen yet (Apple rotated them) fetches the set again.
+     * cache has not seen yet (Apple rotated them) fetches the set again, at
+     * most once a minute, so made-up key ids cannot hammer Apple through us.
      *
      * @return array{keys: list<array<string, string>>}
      */
@@ -67,7 +89,8 @@ class VerifyAppleIdentityToken
         $keys = Cache::remember(self::KEYS_CACHE_KEY, now()->addDay(), fn (): array => $this->fetchKeys());
         $keyId = $this->keyId($identityToken);
 
-        if ($keyId !== null && ! collect($keys['keys'])->contains('kid', $keyId)) {
+        if ($keyId !== null && ! collect($keys['keys'])->contains('kid', $keyId)
+            && Cache::add(self::REFETCH_COOLDOWN_KEY, true, now()->addMinute())) {
             $keys = $this->fetchKeys();
             Cache::put(self::KEYS_CACHE_KEY, $keys, now()->addDay());
         }
@@ -97,7 +120,7 @@ class VerifyAppleIdentityToken
     private function invalid(): ValidationException
     {
         return ValidationException::withMessages([
-            'identity_token' => __('Sign in with Apple could not be verified. Please try again.'),
+            'identity_token' => __('account.apple_unverified'),
         ]);
     }
 }

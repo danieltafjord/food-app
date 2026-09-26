@@ -45,6 +45,24 @@ it('returns an app sign-in to the OAuth authorize endpoint', function () {
     $this->assertAuthenticatedAs($account->user);
 });
 
+it('sends a two-factor account through the challenge before finishing the app sign-in', function () {
+    enableGoogleSignIn();
+    $user = User::factory()->withTwoFactor()->create();
+    SocialAccount::factory()->for($user)->create(['provider_user_id' => '1234567890']);
+    Socialite::fake('google', googleIdentity());
+    $authorizeUrl = url('/oauth/authorize').'?client_id=app&response_type=code';
+
+    $this->withSession(['url.intended' => $authorizeUrl])
+        ->get(route('social.callback', 'google'))
+        ->assertRedirect(route('two-factor.login'))
+        ->assertSessionHas('login.id', $user->id);
+    $this->assertGuest();
+
+    $this->post(route('two-factor.login.store'), ['recovery_code' => 'recovery-code-1'])
+        ->assertRedirect($authorizeUrl);
+    $this->assertAuthenticatedAs($user);
+});
+
 it('does not create an account from an unverified Google email', function () {
     enableGoogleSignIn();
     Socialite::fake('google', googleIdentity(emailVerified: false));

@@ -6,10 +6,12 @@ use App\Actions\Auth\ResolveSocialUser;
 use App\Enums\SocialProvider;
 use App\Http\Controllers\Controller;
 use App\Models\SocialAccount;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Laravel\Fortify\Events\TwoFactorAuthenticationChallenged;
 use Laravel\Fortify\Fortify;
 use Laravel\Socialite\Contracts\User as ProviderUser;
 use Laravel\Socialite\Facades\Socialite;
@@ -74,6 +76,15 @@ class SocialiteController extends Controller
             return redirect($returnTo)->withErrors(['social' => collect($exception->errors())->flatten()->first()]);
         }
 
+        // Google stands in for the password only: two-factor accounts still
+        // answer Fortify's challenge, which then continues to url.intended.
+        if ($this->requiresTwoFactorChallenge($user)) {
+            $request->session()->put(['login.id' => $user->getKey(), 'login.remember' => true]);
+            TwoFactorAuthenticationChallenged::dispatch($user);
+
+            return to_route('two-factor.login');
+        }
+
         Auth::login($user, remember: true);
         $request->session()->regenerate();
         // Signing in just now proves who they are as well as a password would.
@@ -103,6 +114,15 @@ class SocialiteController extends Controller
         $request->session()->passwordConfirmed();
 
         return redirect()->intended(Fortify::redirects('password-confirmation'));
+    }
+
+    /**
+     * The same test Fortify's password login applies.
+     */
+    private function requiresTwoFactorChallenge(User $user): bool
+    {
+        return filled($user->two_factor_secret)
+            && (! Fortify::confirmsTwoFactorAuthentication() || $user->two_factor_confirmed_at !== null);
     }
 
     private function emailVerified(ProviderUser $identity): bool

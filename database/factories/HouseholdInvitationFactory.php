@@ -22,7 +22,9 @@ class HouseholdInvitationFactory extends Factory
     {
         return [
             'household_id' => Household::factory(),
-            'invited_by_user_id' => null,
+            // Sent by one of the household's owners, when it has one.
+            'invited_by_user_id' => fn (array $attributes): ?int => Household::query()->find($attributes['household_id'])
+                ?->members()->wherePivot('role', HouseholdRole::Owner->value)->value('users.id'),
             'email' => fake()->unique()->safeEmail(),
             'role' => HouseholdRole::Member,
             'token' => Str::random(48),
