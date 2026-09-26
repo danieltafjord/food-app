@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Ai\DinnerIdeas;
 use App\Actions\Ai\GenerateWeekDinners;
 use App\Actions\Ai\ReviewDinnerRecipes;
 use App\Models\AiRequest;
@@ -135,7 +136,44 @@ it('returns 422 for invalid bounded input before contacting the provider', funct
     [['preferences' => str_repeat('x', 601)], 'preferences'],
     [['shortcuts' => ['unknown']], 'shortcuts.0'], [['exclude' => array_fill(0, 61, 'Soup')], 'exclude'],
     [['available' => array_fill(0, 21, [])], 'available'],
+    [['count' => 2, 'days' => ['friday']], 'days'], [['days' => ['caturday']], 'days.0'],
+    [['count' => 2, 'reuse' => 3], 'reuse'], [['shortcuts' => ['vegetarian', 'fish']], 'shortcuts'],
 ]);
+
+it('sends weekdays, the reuse target, the season and matching dinner ideas to generation', function () {
+    $this->travelTo(now()->setDate(2026, 9, 25));
+    GenerateWeekDinners::fake([['dinners' => [suggestedDinner(), suggestedDinner(['name' => 'Taco', 'category' => 'meat'])]]]);
+    ReviewDinnerRecipes::fake([['issues' => []]]);
+
+    $this->postJson('/api/v1/ai/plan-week', weekSuggestionInput([
+        'count' => 2, 'days' => ['thursday', 'friday'], 'reuse' => 0, 'shortcuts' => ['kids', 'weekend'],
+        'exclude' => ['Lasagne'],
+    ]))->assertOk();
+
+    GenerateWeekDinners::assertPrompted(function ($prompt) {
+        $input = json_decode($prompt->prompt, true);
+
+        return $input['days'] === ['thursday', 'friday'] && $input['reuse'] === 0 && $input['month'] === 9
+            && count($input['ideas']) === 14 && ! in_array('Lasagne', $input['ideas'], true)
+            && str_contains($prompt->agent->instructions(), 'hverdagsmiddager');
+    });
+});
+
+it('samples familiar dinner ideas that respect vegetarian, season, exclusions and language', function () {
+    $ideas = new DinnerIdeas;
+
+    $vegetarian = $ideas->sample('nb', ['vegetarian'], ['Risgrøt'], 9, 40);
+    expect($vegetarian)->toContain('Tomatsuppe med egg og makaroni', 'Linsesuppe')
+        ->not->toContain('Taco', 'Fiskegrateng', 'Risgrøt', 'Hjemmelaget pizza');
+    expect($ideas->sample('nb', [], [], 9, 200))->toContain('Fårikål');
+    expect($ideas->sample('nb', [], [], 6, 200))->not->toContain('Fårikål')->toContain('Grillet kylling med potetsalat');
+    expect($ideas->sample('en', [], ['taco'], 3, 200))->toContain('Fish gratin')->not->toContain('Fiskegrateng', 'Tacos');
+
+    // Two thirds of the handful come from ideas matching the chosen shortcuts.
+    $fish = $ideas->sample('nb', ['fish'], [], 3, 9);
+    expect($fish)->toHaveCount(9)
+        ->and(count(preg_grep('/fisk|laks|torsk|sei|scampi|bacalao/iu', $fish)))->toBeGreaterThanOrEqual(6);
+});
 
 it('returns 503 for incomplete or invalid dinners without exposing provider output', function (array $dinner) {
     ReviewDinnerRecipes::fake([['issues' => []]]);
