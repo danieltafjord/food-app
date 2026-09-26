@@ -2,9 +2,11 @@
 
 namespace App\Actions\Users;
 
+use App\Actions\Auth\AppleTokens;
 use App\Actions\Households\DeleteHousehold;
 use App\Actions\Sync\AllocateSyncVersion;
 use App\Enums\HouseholdRole;
+use App\Enums\SocialProvider;
 use App\Models\AiRequest;
 use App\Models\ApiRequest;
 use App\Models\Dinner;
@@ -29,10 +31,13 @@ class DeleteAccount
     /** @var list<class-string<Model>> */
     private const CONTENT_MODELS = [HouseholdDinnerCategory::class, Ingredient::class, Dinner::class, DinnerItem::class, DinnerPlan::class, DinnerPlanEntry::class, ShoppingList::class, ShoppingListItem::class];
 
-    public function __construct(private DeleteHousehold $deleteHousehold, private AllocateSyncVersion $allocateVersion) {}
+    public function __construct(private DeleteHousehold $deleteHousehold, private AllocateSyncVersion $allocateVersion, private AppleTokens $appleTokens) {}
 
     public function handle(User $user): void
     {
+        $appleRefreshTokens = $user->socialAccounts()->where('provider', SocialProvider::Apple)
+            ->whereNotNull('refresh_token')->get()->pluck('refresh_token');
+
         DB::transaction(function () use ($user): void {
             $householdIds = $user->households()->pluck('households.id');
 
@@ -97,6 +102,12 @@ class DeleteAccount
 
             $user->delete();
         });
+
+        // Apple requires ending the app's Sign in with Apple access too. This
+        // runs after the commit so a slow Apple never holds the transaction.
+        foreach ($appleRefreshTokens as $refreshToken) {
+            $this->appleTokens->revoke($refreshToken);
+        }
     }
 
     /** @param class-string<Model> $model */

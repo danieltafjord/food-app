@@ -154,3 +154,9 @@ Route::prefix('v1/dinner-images')->name('api.v1.dinner-images.')
         Route::post('/', [DinnerImageController::class, 'store'])->middleware('throttle:dinner-images')->name('store');
         Route::post('generate', [DinnerImageController::class, 'generate'])->middleware('throttle:ai')->name('generate');
     });
+
+// Deleting the account from the app talks to Apple, so it stays outside the
+// write transaction; DeleteAccount runs its own.
+Route::delete('v1/me', [MeController::class, 'destroy'])
+    ->middleware(['api.log:app', 'auth:api', 'api.app-only', 'throttle:api'])
+    ->name('api.v1.me.destroy');

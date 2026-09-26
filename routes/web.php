@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\SocialiteController;
 use App\Http\Controllers\OAuth\ApproveHouseholdAuthorizationController;
 use App\Http\Controllers\PublicPageController;
 use App\Http\Controllers\RedirectToPreferredLocaleController;
@@ -47,6 +48,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::post('oauth/authorize/household', [ApproveHouseholdAuthorizationController::class, 'approve'])
     ->middleware('auth')
     ->name('oauth.household-authorizations.approve');
+
+// "Continue with Google": sign in, sign up, or confirm the password of a
+// passwordless account. The app's web sign-in sheet uses the same routes.
+Route::middleware('throttle:20,1')->group(function () {
+    Route::get('auth/{provider}/redirect', [SocialiteController::class, 'redirect'])->name('social.redirect');
+    Route::get('auth/{provider}/callback', [SocialiteController::class, 'callback'])->name('social.callback');
+});
 
 require __DIR__.'/settings.php';
 require __DIR__.'/admin.php';

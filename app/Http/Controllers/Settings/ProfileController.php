@@ -53,6 +53,14 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
+        // No password to type: the person must have confirmed it is them
+        // recently (signing in with Google counts). The confirmation brings
+        // them back here to delete again.
+        $confirmedAgo = now()->getTimestamp() - $request->session()->get('auth.password_confirmed_at', 0);
+        if (! $user->hasPassword() && $confirmedAgo > config('auth.password_timeout', 10800)) {
+            return redirect()->guest(route('password.confirm'));
+        }
+
         $deleteAccount->handle($user);
 
         Auth::guard('web')->logoutCurrentDevice();

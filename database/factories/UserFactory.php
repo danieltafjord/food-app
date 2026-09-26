@@ -71,6 +71,16 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the user signed up with Apple or Google and has no password.
+     */
+    public function withoutPassword(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'password' => null,
+        ]);
+    }
+
+    /**
      * Indicate that the model has two-factor authentication configured.
      */
     public function withTwoFactor(): static

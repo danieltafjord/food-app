@@ -92,6 +92,24 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
     }
 
     /**
+     * The Apple and Google identities this user can sign in with.
+     *
+     * @return HasMany<SocialAccount, $this>
+     */
+    public function socialAccounts(): HasMany
+    {
+        return $this->hasMany(SocialAccount::class);
+    }
+
+    /**
+     * False for people who signed up with Apple or Google and never set one.
+     */
+    public function hasPassword(): bool
+    {
+        return $this->password !== null;
+    }
+
+    /**
      * The households this user belongs to.
      *
      * @return BelongsToMany<Household, $this>

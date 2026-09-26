@@ -17,8 +17,10 @@ class ProfileDeleteRequest extends FormRequest
      */
     public function rules(): array
     {
+        // Without a password, ProfileController asks for a recent confirmation
+        // with Google instead.
         return [
-            'password' => $this->currentPasswordRules(),
+            'password' => $this->user()->hasPassword() ? $this->currentPasswordRules() : ['prohibited'],
         ];
     }
 }

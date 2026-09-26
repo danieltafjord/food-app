@@ -40,6 +40,8 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+                // False for people who signed up with Google and never set one.
+                'hasPassword' => fn (): bool => $request->user()?->hasPassword() ?? false,
             ],
             'locale' => fn (): string => app()->getLocale(),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',

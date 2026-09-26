@@ -4,10 +4,12 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Enums\SocialProvider;
 use App\Http\Responses\LoginResponse;
 use App\Http\Responses\RegisterResponse;
 use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
@@ -74,10 +76,12 @@ class FortifyServiceProvider extends ServiceProvider
      */
     private function configureViews(): void
     {
-        Fortify::loginView(fn (Request $request) => Inertia::render('auth/Login', [
-            'canResetPassword' => Features::enabled(Features::resetPasswords()),
-            'status' => $request->session()->get('status'),
-        ]));
+        Fortify::loginView(fn (Request $request) => $this->redirectToRequestedProvider($request)
+            ?? Inertia::render('auth/Login', [
+                'canResetPassword' => Features::enabled(Features::resetPasswords()),
+                'status' => $request->session()->get('status'),
+                'socialProviders' => $this->webSocialProviders(),
+            ]));
 
         Fortify::resetPasswordView(fn (Request $request) => Inertia::render('auth/ResetPassword', [
             'email' => $request->email,
@@ -95,11 +99,54 @@ class FortifyServiceProvider extends ServiceProvider
 
         Fortify::registerView(fn () => Inertia::render('auth/Register', [
             'passwordRules' => Password::defaults()->toPasswordRulesString(),
+            'socialProviders' => $this->webSocialProviders(),
         ]));
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/TwoFactorChallenge'));
 
-        Fortify::confirmPasswordView(fn () => Inertia::render('auth/ConfirmPassword'));
+        // Someone without a password confirms with a provider they signed up with.
+        Fortify::confirmPasswordView(fn (Request $request) => Inertia::render('auth/ConfirmPassword', [
+            'hasPassword' => $request->user()->hasPassword(),
+            'socialProviders' => array_values(array_intersect(
+                $this->webSocialProviders(),
+                $request->user()->socialAccounts()->pluck('provider')->map->value->all(),
+            )),
+        ]));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function webSocialProviders(): array
+    {
+        return array_map(fn (SocialProvider $provider): string => $provider->value, SocialProvider::availableOnWeb());
+    }
+
+    /**
+     * The app's "Continue with Google" opens the OAuth authorize URL with
+     * `provider=google`. When that lands on the login page, go straight on to
+     * Google instead of showing the form. The hint is dropped from the saved
+     * URL first, so cancelling at Google comes back to the normal form.
+     */
+    private function redirectToRequestedProvider(Request $request): ?RedirectResponse
+    {
+        $intended = $request->session()->get('url.intended');
+
+        if (! is_string($intended) || ! str_contains($intended, '/oauth/authorize')) {
+            return null;
+        }
+
+        parse_str((string) parse_url($intended, PHP_URL_QUERY), $query);
+        $provider = SocialProvider::tryFrom((string) ($query['provider'] ?? ''));
+
+        if (! $provider || ! in_array($provider, SocialProvider::availableOnWeb(), true)) {
+            return null;
+        }
+
+        unset($query['provider']);
+        $request->session()->put('url.intended', strtok($intended, '?').'?'.http_build_query($query));
+
+        return to_route('social.redirect', $provider);
     }
 
     /**

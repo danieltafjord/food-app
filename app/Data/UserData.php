@@ -14,6 +14,8 @@ class UserData extends Data
         public string $email,
         public bool $emailVerified,
         public bool $twoFactorEnabled,
+        /** @var list<string> Apple/Google identities linked to the account. */
+        public array $signInProviders,
         public Theme $theme,
         public AppLocale $locale,
         public ?HouseholdData $currentHousehold,

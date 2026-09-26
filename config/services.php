@@ -41,4 +41,22 @@ return [
         'access_token' => env('EXPO_ACCESS_TOKEN'),
     ],
 
+    // "Continue with Google" on the website (and the app's web sign-in sheet).
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', '/auth/google/callback'),
+    ],
+
+    // Native Sign in with Apple in the iOS app.
+    'apple' => [
+        // The app's bundle id: Apple issues identity tokens for this audience.
+        'client_id' => env('APPLE_CLIENT_ID', 'no.handlelistaapp'),
+        // A Sign in with Apple key lets the server revoke the app's access at
+        // Apple when an account is deleted. Sign-in works without it.
+        'team_id' => env('APPLE_TEAM_ID'),
+        'key_id' => env('APPLE_KEY_ID'),
+        'private_key' => env('APPLE_PRIVATE_KEY'),
+    ],
+
 ];

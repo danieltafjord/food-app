@@ -16,6 +16,7 @@
         "testing-best-practices",
         "mcp-development",
         "passport-development",
+        "socialite-development",
         "wayfinder-development",
         "inertia-svelte-development",
         "tailwindcss-development"

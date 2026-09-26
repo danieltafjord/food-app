@@ -10,6 +10,7 @@
     import AppHead from '@/components/AppHead.svelte';
     import InputError from '@/components/InputError.svelte';
     import PasswordInput from '@/components/PasswordInput.svelte';
+    import SocialSignIn from '@/components/SocialSignIn.svelte';
     import TextLink from '@/components/TextLink.svelte';
     import { Button } from '@/components/ui/button';
     import { Input } from '@/components/ui/input';
@@ -18,10 +19,15 @@
     import { login, privacy } from '@/routes';
     import { store } from '@/routes/register';
 
-    let { passwordRules }: { passwordRules: string } = $props();
+    let {
+        passwordRules,
+        socialProviders = [],
+    }: { passwordRules: string; socialProviders?: string[] } = $props();
 </script>
 
 <AppHead title="Register" />
+
+<SocialSignIn providers={socialProviders} separator="Or sign up with email" />
 
 <Form
     {...store.form()}

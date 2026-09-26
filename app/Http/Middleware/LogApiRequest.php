@@ -30,7 +30,7 @@ class LogApiRequest
     public const MAX_ANONYMOUS_BODY_BYTES = 1024;
 
     /** Body fields whose values are never stored. */
-    private const SECRET_FIELDS = ['password', 'current_password', 'password_confirmation', 'token', 'access_token', 'refresh_token', 'client_secret', 'secret', 'code', 'authorization', 'plain_text_token'];
+    private const SECRET_FIELDS = ['password', 'current_password', 'password_confirmation', 'token', 'access_token', 'refresh_token', 'client_secret', 'secret', 'code', 'authorization', 'plain_text_token', 'identity_token', 'authorization_code', 'nonce'];
 
     /** Request attribute holding the id that ties this request to everything it logs. */
     public const REQUEST_ID = 'request_id';

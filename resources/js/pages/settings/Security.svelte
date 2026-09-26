@@ -44,6 +44,9 @@
     );
 
     let { passwordRules }: { passwordRules: string } = $props();
+
+    // Accounts made with Google start without a password.
+    const hasPassword = $derived(page.props.auth.hasPassword);
 </script>
 
 <AppHead title="Security settings" />
@@ -53,8 +56,10 @@
 <div class="space-y-6">
     <Heading
         variant="small"
-        title="Update password"
-        description="Ensure your account is using a long, random password to stay secure"
+        title={hasPassword ? 'Update password' : 'Set a password'}
+        description={hasPassword
+            ? 'Ensure your account is using a long, random password to stay secure'
+            : 'You sign in with Google. Add a password to also sign in with your email.'}
     />
 
     <Form
@@ -65,17 +70,19 @@
         resetOnError={['password', 'password_confirmation', 'current_password']}
     >
         {#snippet children({ errors, processing })}
-            <div class="grid gap-2">
-                <Label for="current_password">Current password</Label>
-                <PasswordInput
-                    id="current_password"
-                    name="current_password"
-                    class="mt-1 block h-10 w-full rounded-full px-4 shadow-none"
-                    autocomplete="current-password"
-                    placeholder="Current password"
-                />
-                <InputError message={errors.current_password} />
-            </div>
+            {#if hasPassword}
+                <div class="grid gap-2">
+                    <Label for="current_password">Current password</Label>
+                    <PasswordInput
+                        id="current_password"
+                        name="current_password"
+                        class="mt-1 block h-10 w-full rounded-full px-4 shadow-none"
+                        autocomplete="current-password"
+                        placeholder="Current password"
+                    />
+                    <InputError message={errors.current_password} />
+                </div>
+            {/if}
 
             <div class="grid gap-2">
                 <Label for="password">New password</Label>

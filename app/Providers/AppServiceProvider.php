@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Actions\Notifications\RecordHouseholdActivity;
 use App\Actions\Sync\AllocateSyncVersion;
+use App\Auth\Grants\AppleSignInGrant;
 use App\Enums\ApiTokenScope;
 use App\Models\Passport\Client;
 use Carbon\CarbonImmutable;
@@ -22,7 +23,9 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Passport\Bridge\RefreshTokenRepository;
 use Laravel\Passport\Passport;
+use League\OAuth2\Server\AuthorizationServer;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -127,6 +130,17 @@ class AppServiceProvider extends ServiceProvider
         // controller resolves. First-party clients skip the consent screen, but
         // the binding must exist for the controller to be instantiated at all.
         Passport::authorizationView('oauth.authorize');
+
+        // Native Sign in with Apple trades an Apple identity token at /oauth/token.
+        $this->app->extend(AuthorizationServer::class, function (AuthorizationServer $server): AuthorizationServer {
+            $grant = $this->app->make(AppleSignInGrant::class, [
+                'refreshTokenRepository' => $this->app->make(RefreshTokenRepository::class),
+            ]);
+            $grant->setRefreshTokenTTL(Passport::refreshTokensExpireIn());
+            $server->enableGrantType($grant, Passport::tokensExpireIn());
+
+            return $server;
+        });
     }
 
     /**

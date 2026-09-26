@@ -1,9 +1,12 @@
 <?php
 
+use App\Actions\Auth\VerifyAppleIdentityToken;
 use App\Enums\HouseholdRole;
 use App\Models\Household;
 use App\Models\User;
+use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /*
@@ -60,4 +63,51 @@ function ownerWithHousehold(): array
     $owner->update(['current_household_id' => $household->id]);
 
     return [$owner, $household];
+}
+
+/**
+ * Sign an Apple identity token the way Apple would, and serve the matching
+ * public key from a faked Apple key endpoint. `$nonce` is the raw value the
+ * app keeps; the token carries its SHA-256.
+ *
+ * @param  array<string, mixed>  $claims
+ */
+function appleIdentityToken(array $claims = [], string $nonce = 'raw-nonce'): string
+{
+    static $key = null;
+    $key ??= openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    $rsa = openssl_pkey_get_details($key)['rsa'];
+    openssl_pkey_export($key, $privateKey);
+
+    Http::fake([VerifyAppleIdentityToken::KEYS_URL => Http::response(['keys' => [[
+        'kty' => 'RSA', 'kid' => 'test-key', 'use' => 'sig', 'alg' => 'RS256',
+        'n' => JWT::urlsafeB64Encode($rsa['n']), 'e' => JWT::urlsafeB64Encode($rsa['e']),
+    ]]])]);
+
+    return JWT::encode([
+        'iss' => 'https://appleid.apple.com',
+        'aud' => 'no.handlelistaapp',
+        'iat' => time(),
+        'exp' => time() + 600,
+        'sub' => '001234.apple-user.1234',
+        'email' => 'apple-user@example.com',
+        'email_verified' => 'true',
+        'nonce' => hash('sha256', $nonce),
+        ...$claims,
+    ], $privateKey, 'RS256', 'test-key');
+}
+
+/**
+ * Configure a Sign in with Apple key so the server can exchange and revoke tokens.
+ */
+function configureAppleKey(): void
+{
+    $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+    openssl_pkey_export($key, $privateKey);
+
+    config([
+        'services.apple.team_id' => 'TEAM123456',
+        'services.apple.key_id' => 'KEY1234567',
+        'services.apple.private_key' => $privateKey,
+    ]);
 }

@@ -16,10 +16,16 @@
     import InputError from '@/components/InputError.svelte';
     import PasskeyVerify from '@/components/PasskeyVerify.svelte';
     import PasswordInput from '@/components/PasswordInput.svelte';
+    import SocialSignIn from '@/components/SocialSignIn.svelte';
     import { Button } from '@/components/ui/button';
     import { Label } from '@/components/ui/label';
     import { Spinner } from '@/components/ui/spinner';
     import { store } from '@/routes/password/confirm';
+
+    let {
+        hasPassword = true,
+        socialProviders = [],
+    }: { hasPassword?: boolean; socialProviders?: string[] } = $props();
 </script>
 
 <AppHead title="Confirm password" />
@@ -31,35 +37,40 @@
     }}
     label="Confirm with passkey"
     loadingLabel="Confirming..."
-    separator="Or confirm with password"
+    separator={hasPassword ? 'Or confirm with password' : 'Or'}
 />
 
-<Form {...store.form()} resetOnSuccess>
-    {#snippet children({ errors, processing })}
-        <div class="space-y-6">
-            <div class="grid gap-2">
-                <Label for="password">Password</Label>
-                <PasswordInput
-                    id="password"
-                    name="password"
-                    class="mt-1 block w-full"
-                    required
-                    autocomplete="current-password"
-                />
-                <InputError message={errors.password} />
-            </div>
+{#if !hasPassword}
+    <!-- Signed up with Google and never set a password: confirm with Google. -->
+    <SocialSignIn providers={socialProviders} confirm separator={null} />
+{:else}
+    <Form {...store.form()} resetOnSuccess>
+        {#snippet children({ errors, processing })}
+            <div class="space-y-6">
+                <div class="grid gap-2">
+                    <Label for="password">Password</Label>
+                    <PasswordInput
+                        id="password"
+                        name="password"
+                        class="mt-1 block w-full"
+                        required
+                        autocomplete="current-password"
+                    />
+                    <InputError message={errors.password} />
+                </div>
 
-            <div class="flex items-center">
-                <Button
-                    type="submit"
-                    class="w-full"
-                    disabled={processing}
-                    data-test="confirm-password-button"
-                >
-                    {#if processing}<Spinner />{/if}
-                    Confirm password
-                </Button>
+                <div class="flex items-center">
+                    <Button
+                        type="submit"
+                        class="w-full"
+                        disabled={processing}
+                        data-test="confirm-password-button"
+                    >
+                        {#if processing}<Spinner />{/if}
+                        Confirm password
+                    </Button>
+                </div>
             </div>
-        </div>
-    {/snippet}
-</Form>
+        {/snippet}
+    </Form>
+{/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Form } from '@inertiajs/svelte';
+    import { Form, page } from '@inertiajs/svelte';
     import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
     import Heading from '@/components/Heading.svelte';
     import InputError from '@/components/InputError.svelte';
@@ -15,6 +15,10 @@
         DialogTrigger,
     } from '@/components/ui/dialog';
     import { Label } from '@/components/ui/label';
+
+    // Accounts made with Google have no password; deleting one first asks
+    // them to confirm with Google instead.
+    const hasPassword = $derived(page.props.auth.hasPassword);
 </script>
 
 <div class="space-y-6">
@@ -58,23 +62,27 @@
                                 removed from shared households. Other members'
                                 content and shared ingredients will remain. If
                                 you are the last owner, another member will
-                                become the owner. Enter your password to
-                                confirm.
+                                become the owner.
+                                {hasPassword
+                                    ? 'Enter your password to confirm.'
+                                    : 'You may be asked to confirm with Google first.'}
                             </DialogDescription>
                         </div>
 
-                        <div class="grid gap-2">
-                            <Label for="password" class="sr-only"
-                                >Password</Label
-                            >
-                            <PasswordInput
-                                id="password"
-                                name="password"
-                                placeholder="Password"
-                                class="h-10 rounded-full px-4 shadow-none"
-                            />
-                            <InputError message={errors.password} />
-                        </div>
+                        {#if hasPassword}
+                            <div class="grid gap-2">
+                                <Label for="password" class="sr-only"
+                                    >Password</Label
+                                >
+                                <PasswordInput
+                                    id="password"
+                                    name="password"
+                                    placeholder="Password"
+                                    class="h-10 rounded-full px-4 shadow-none"
+                                />
+                                <InputError message={errors.password} />
+                            </div>
+                        {/if}
 
                         <DialogFooter class="gap-2">
                             <DialogClose>

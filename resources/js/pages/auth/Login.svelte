@@ -11,6 +11,7 @@
     import InputError from '@/components/InputError.svelte';
     import PasskeyVerify from '@/components/PasskeyVerify.svelte';
     import PasswordInput from '@/components/PasswordInput.svelte';
+    import SocialSignIn from '@/components/SocialSignIn.svelte';
     import TextLink from '@/components/TextLink.svelte';
     import { Button } from '@/components/ui/button';
     import { Checkbox } from '@/components/ui/checkbox';
@@ -24,9 +25,11 @@
     let {
         status = '',
         canResetPassword,
+        socialProviders = [],
     }: {
         status?: string;
         canResetPassword: boolean;
+        socialProviders?: string[];
     } = $props();
 </script>
 
@@ -37,6 +40,8 @@
         {status}
     </div>
 {/if}
+
+<SocialSignIn providers={socialProviders} separator="Or" />
 
 <PasskeyVerify />
 
