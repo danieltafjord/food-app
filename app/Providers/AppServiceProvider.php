@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Actions\Notifications\RecordHouseholdActivity;
 use App\Actions\Sync\AllocateSyncVersion;
 use App\Enums\ApiTokenScope;
 use App\Models\Passport\Client;
@@ -32,6 +33,8 @@ class AppServiceProvider extends ServiceProvider
     {
         // One allocator per request so writes inside one transaction share a version.
         $this->app->singleton(AllocateSyncVersion::class);
+        // One buffer per request so a batch's activity is stored in one insert after commit.
+        $this->app->singleton(RecordHouseholdActivity::class);
     }
 
     /**
@@ -58,6 +61,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Event::listen(TransactionRolledBack::class, function (): void {
             $this->app->make(AllocateSyncVersion::class)->forget();
+            $this->app->make(RecordHouseholdActivity::class)->forget();
         });
     }
 

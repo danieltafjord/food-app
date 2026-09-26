@@ -2,6 +2,7 @@
 
 namespace App\Actions\Households;
 
+use App\Actions\Notifications\RecordHouseholdActivity;
 use App\Models\Household;
 use App\Models\HouseholdInvitation;
 use App\Models\User;
@@ -10,6 +11,8 @@ use Illuminate\Support\Str;
 
 class AcceptInvitation
 {
+    public function __construct(private RecordHouseholdActivity $recordActivity) {}
+
     /**
      * Accept an invitation, joining the user to the household.
      */
@@ -29,6 +32,7 @@ class AcceptInvitation
 
             if (! $household->hasMember($user)) {
                 $household->members()->attach($user, ['role' => $invitation->role->value]);
+                $this->recordActivity->memberJoined($household->id, $user->id);
             }
 
             $invitation->update(['accepted_at' => now()]);

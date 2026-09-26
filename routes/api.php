@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\InvitationAcceptanceController;
 use App\Http\Controllers\Api\V1\InvitationController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\MemberController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\RealtimeController;
 use App\Http\Controllers\Api\V1\ShoppingListController;
 use App\Http\Controllers\Api\V1\ShoppingListItemController;
@@ -40,6 +41,12 @@ Route::prefix('v1')
         Route::get('auth/devices', [DeviceController::class, 'index'])->name('auth.devices.index');
         Route::delete('auth/devices/{token}', [DeviceController::class, 'destroy'])->name('auth.devices.destroy');
         Route::get('realtime', RealtimeController::class)->name('realtime');
+
+        // Push notifications: this install's token and the user's topic choices
+        Route::put('me/push-token', [NotificationController::class, 'registerDevice'])->name('me.push-token.update');
+        Route::delete('me/push-token', [NotificationController::class, 'unregisterDevice'])->name('me.push-token.destroy');
+        Route::get('me/notifications', [NotificationController::class, 'preferences'])->name('me.notifications.show');
+        Route::patch('me/notifications', [NotificationController::class, 'updatePreferences'])->name('me.notifications.update');
 
         // Households the user belongs to
         Route::get('households', [HouseholdController::class, 'index'])->name('households.index');

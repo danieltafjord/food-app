@@ -4,11 +4,14 @@ namespace App\Models;
 
 use App\Models\Concerns\Syncable;
 use App\Models\Concerns\TracksContentAuthors;
+use App\Observers\ShoppingListItemObserver;
 use Database\Factories\ShoppingListItemFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+#[ObservedBy(ShoppingListItemObserver::class)]
 class ShoppingListItem extends Model
 {
     /** @use HasFactory<ShoppingListItemFactory> */

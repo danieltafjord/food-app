@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Auth;
 use App\Data\AccessTokenData;
 use App\Http\Controllers\Controller;
 use App\Models\ApiTokenDetail;
+use App\Models\PushToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Passport\Token;
@@ -43,6 +44,7 @@ class DeviceController extends Controller
         $deviceToken->getConnection()->transaction(function () use ($deviceToken): void {
             $deviceToken->revoke();
             $deviceToken->refreshToken()->update(['revoked' => true]);
+            PushToken::query()->where('access_token_id', $deviceToken->id)->delete();
         });
 
         return response()->json(['message' => 'Device revoked.']);

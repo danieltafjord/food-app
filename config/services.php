@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'expo' => [
+        'push_url' => env('EXPO_PUSH_URL', 'https://exp.host/--/api/v2/push/send'),
+        // Only needed when "enhanced push security" is on for the Expo project.
+        'access_token' => env('EXPO_ACCESS_TOKEN'),
+    ],
+
 ];

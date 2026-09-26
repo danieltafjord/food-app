@@ -5,11 +5,14 @@ namespace App\Models;
 use App\Enums\MealType;
 use App\Models\Concerns\Syncable;
 use App\Models\Concerns\TracksContentAuthors;
+use App\Observers\DinnerPlanEntryObserver;
 use Database\Factories\DinnerPlanEntryFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+#[ObservedBy(DinnerPlanEntryObserver::class)]
 class DinnerPlanEntry extends Model
 {
     /** @use HasFactory<DinnerPlanEntryFactory> */
